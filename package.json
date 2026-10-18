@@ -1,0 +1,42 @@
+{
+  "name": "openmat",
+  "version": "1.0.0",
+  "description": "OpenMat: Open-Source MATLAB-Compatible Scientific Computing Environment & Desktop IDE",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "matlab",
+    "open-source",
+    "scientific-computing",
+    "matrix",
+    "numerical-computing",
+    "ide",
+    "openmat"
+  ],
+  "author": "Diego Gonzalez Gonzalez",
+  "license": "MIT",
+  "dependencies": {
+    "chart.js": "^4.4.7",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-chartjs-2": "^5.2.0",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.1",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.16",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.3",
+    "vitest": "^2.1.8"
+  }
+}
