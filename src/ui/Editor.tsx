@@ -31,7 +31,7 @@ export const Editor: React.FC<EditorProps> = ({
   const lines = (activeTab?.content || '').split('\n');
 
   return (
-    <div className="mw-panel h-full flex flex-col">
+    <div className="om-panel h-full flex flex-col">
       {/* Editor Tab Bar */}
       <div className="flex items-center bg-[#e4e7eb] border-b border-[#c9d0d8] px-1 pt-1 space-x-1 select-none">
         {tabs.map((tab) => (
@@ -89,7 +89,7 @@ export const Editor: React.FC<EditorProps> = ({
           </button>
         </div>
         <div className="text-[10px] text-gray-400 font-mono">
-          Lines: {lines.length} | MATLAB Script (.m)
+          Lines: {lines.length} | Matrix Script (.m)
         </div>
       </div>
 

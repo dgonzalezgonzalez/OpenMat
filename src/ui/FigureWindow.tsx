@@ -39,8 +39,8 @@ interface FigureWindowProps {
 export const FigureWindow: React.FC<FigureWindowProps> = ({ plot, onClear }) => {
   if (!plot || plot.series.length === 0) {
     return (
-      <div className="mw-panel h-full flex flex-col">
-        <div className="mw-panel-header">
+      <div className="om-panel h-full flex flex-col">
+        <div className="om-panel-header">
           <div className="flex items-center space-x-1">
             <LineChartIcon size={13} className="text-emerald-600" />
             <span>Figure 1</span>
@@ -108,9 +108,9 @@ export const FigureWindow: React.FC<FigureWindowProps> = ({ plot, onClear }) => 
   };
 
   return (
-    <div className="mw-panel h-full flex flex-col">
+    <div className="om-panel h-full flex flex-col">
       {/* Panel Header */}
-      <div className="mw-panel-header">
+      <div className="om-panel-header">
         <div className="flex items-center space-x-1">
           <LineChartIcon size={13} className="text-emerald-600" />
           <span>Figure 1: {plot.title || 'Untitled'}</span>

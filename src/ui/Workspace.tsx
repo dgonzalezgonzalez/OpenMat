@@ -61,9 +61,9 @@ export const Workspace: React.FC<WorkspaceProps> = ({
   );
 
   return (
-    <div className="mw-panel h-full flex flex-col">
+    <div className="om-panel h-full flex flex-col">
       {/* Panel Header */}
-      <div className="mw-panel-header">
+      <div className="om-panel-header">
         <div className="flex items-center space-x-1">
           <Database size={13} className="text-blue-600" />
           <span>Workspace</span>

@@ -51,9 +51,9 @@ export const Ribbon: React.FC<RibbonProps> = ({
       <div className="h-8 bg-[#1e293b] text-white flex items-center justify-between px-3 text-xs border-b border-[#0f172a]">
         <div className="flex items-center space-x-3">
           <img src="/src/assets/logo.svg" alt="OpenMat Logo" className="w-5 h-5 rounded" />
-          <span className="font-semibold tracking-wide">OpenMat R2025b</span>
+          <span className="font-semibold tracking-wide">OpenMat</span>
           <span className="text-gray-400 text-[11px] font-mono">
-            [Engine: {activeEngine === 'native' ? 'Native OpenMat (Fast In-Memory)' : 'Local MATLAB R2025b Bridge'}]
+            [Engine: {activeEngine === 'native' ? 'Native OpenMat (Fast In-Memory)' : 'Host Native Engine'}]
           </span>
         </div>
 
@@ -77,7 +77,7 @@ export const Ribbon: React.FC<RibbonProps> = ({
           <div
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`mw-ribbon-tab ${activeTab === tab ? 'active' : ''}`}
+            className={`om-ribbon-tab ${activeTab === tab ? 'active' : ''}`}
           >
             {tab}
           </div>
@@ -91,7 +91,7 @@ export const Ribbon: React.FC<RibbonProps> = ({
             {/* FILE SECTION */}
             <div className="flex flex-col items-center h-full pr-3 border-r border-[#d1d5db]">
               <div className="flex items-center space-x-2">
-                <button onClick={onNewScript} className="mw-tool-button w-14">
+                <button onClick={onNewScript} className="om-tool-button w-14">
                   <FileText size={24} className="text-[#0076a8]" />
                   <span className="text-[10px] mt-1 text-center font-medium">New Script</span>
                 </button>
@@ -112,7 +112,7 @@ export const Ribbon: React.FC<RibbonProps> = ({
             {/* VARIABLE SECTION */}
             <div className="flex flex-col items-center h-full px-3 border-r border-[#d1d5db]">
               <div className="flex items-center space-x-2">
-                <button onClick={onClearWorkspace} className="mw-tool-button w-14">
+                <button onClick={onClearWorkspace} className="om-tool-button w-14">
                   <Trash2 size={24} className="text-red-500" />
                   <span className="text-[10px] mt-1 text-center font-medium">Clear WS</span>
                 </button>
@@ -133,7 +133,7 @@ export const Ribbon: React.FC<RibbonProps> = ({
             {/* CODE SECTION */}
             <div className="flex flex-col items-center h-full px-3 border-r border-[#d1d5db]">
               <div className="flex items-center space-x-2">
-                <button onClick={onRunScript} className="mw-tool-button w-14 bg-green-50 hover:bg-green-100 border-green-200">
+                <button onClick={onRunScript} className="om-tool-button w-14 bg-green-50 hover:bg-green-100 border-green-200">
                   <Play size={24} className="text-green-600 fill-green-600" />
                   <span className="text-[10px] mt-1 text-center font-bold text-green-800">Run</span>
                 </button>
@@ -162,11 +162,11 @@ export const Ribbon: React.FC<RibbonProps> = ({
                   >
                     <option value="native">Native OpenMat (Instant)</option>
                     <option value="bridge" disabled={!bridgeAvailable}>
-                      {bridgeAvailable ? 'Host MATLAB R2025b Bridge' : 'Local Bridge (Not Available)'}
+                      {bridgeAvailable ? 'Host Native Engine Bridge' : 'Local Bridge (Not Available)'}
                     </option>
                   </select>
                 </div>
-                <button className="mw-tool-button w-12">
+                <button className="om-tool-button w-12">
                   <Settings size={20} className="text-gray-600" />
                   <span className="text-[9px] mt-1 text-center">Layout</span>
                 </button>
@@ -177,11 +177,11 @@ export const Ribbon: React.FC<RibbonProps> = ({
             {/* RESOURCES SECTION */}
             <div className="flex flex-col items-center h-full px-3">
               <div className="flex items-center space-x-2">
-                <button className="mw-tool-button w-12">
+                <button className="om-tool-button w-12">
                   <HelpCircle size={22} className="text-blue-600" />
                   <span className="text-[10px] mt-1 text-center">Help</span>
                 </button>
-                <button className="mw-tool-button w-12">
+                <button className="om-tool-button w-12">
                   <Sparkles size={22} className="text-purple-600" />
                   <span className="text-[10px] mt-1 text-center">Community</span>
                 </button>
@@ -193,19 +193,19 @@ export const Ribbon: React.FC<RibbonProps> = ({
 
         {activeTab === 'PLOTS' && (
           <div className="flex items-center space-x-4">
-            <button onClick={() => onOpenPlotGallery('line')} className="mw-tool-button w-14">
+            <button onClick={() => onOpenPlotGallery('line')} className="om-tool-button w-14">
               <LineChart size={24} className="text-[#0072BD]" />
               <span className="text-[10px] mt-1 font-medium">plot</span>
             </button>
-            <button onClick={() => onOpenPlotGallery('scatter')} className="mw-tool-button w-14">
+            <button onClick={() => onOpenPlotGallery('scatter')} className="om-tool-button w-14">
               <LayoutGrid size={24} className="text-[#D95319]" />
               <span className="text-[10px] mt-1 font-medium">scatter</span>
             </button>
-            <button onClick={() => onOpenPlotGallery('bar')} className="mw-tool-button w-14">
+            <button onClick={() => onOpenPlotGallery('bar')} className="om-tool-button w-14">
               <BarChart2 size={24} className="text-[#77AC30]" />
               <span className="text-[10px] mt-1 font-medium">bar</span>
             </button>
-            <button onClick={() => onOpenPlotGallery('histogram')} className="mw-tool-button w-14">
+            <button onClick={() => onOpenPlotGallery('histogram')} className="om-tool-button w-14">
               <PieChart size={24} className="text-[#7E2F8E]" />
               <span className="text-[10px] mt-1 font-medium">histogram</span>
             </button>
@@ -233,11 +233,11 @@ export const Ribbon: React.FC<RibbonProps> = ({
 
         {activeTab === 'EDITOR' && (
           <div className="flex items-center space-x-4">
-            <button onClick={onRunScript} className="mw-tool-button w-14 bg-green-50 hover:bg-green-100 border-green-200">
+            <button onClick={onRunScript} className="om-tool-button w-14 bg-green-50 hover:bg-green-100 border-green-200">
               <Play size={24} className="text-green-600 fill-green-600" />
               <span className="text-[10px] mt-1 font-bold text-green-800">Run Script</span>
             </button>
-            <button onClick={onNewScript} className="mw-tool-button w-14">
+            <button onClick={onNewScript} className="om-tool-button w-14">
               <FileText size={24} className="text-blue-600" />
               <span className="text-[10px] mt-1 font-medium">New File</span>
             </button>

@@ -7,7 +7,7 @@ import { Editor, EditorTab } from './Editor';
 import { FigureWindow } from './FigureWindow';
 import { CommandHistory } from './CommandHistory';
 import { Interpreter } from '../engine/interpreter';
-import { MatlabBridge } from '../engine/bridge';
+import { HostEngineBridge } from '../engine/bridge';
 import { PlotData, ExecutionOutput } from '../engine/types';
 
 const INITIAL_DEMO_SCRIPT = `% OpenMat Demo Script
@@ -52,7 +52,7 @@ export const OpenMatApp: React.FC = () => {
 
   // Engine instance
   const [interpreter] = useState<Interpreter>(() => new Interpreter());
-  const [bridge] = useState<MatlabBridge>(() => new MatlabBridge());
+  const [bridge] = useState<HostEngineBridge>(() => new HostEngineBridge());
 
   // Workspace & History State
   const [workspace, setWorkspace] = useState<Record<string, any>>({});
@@ -180,7 +180,7 @@ export const OpenMatApp: React.FC = () => {
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-[#f0f2f5]">
-      {/* 1. MATLAB Toolstrip Ribbon */}
+      {/* 1. Toolstrip Ribbon */}
       <Ribbon
         activeTab={ribbonTab}
         setActiveTab={setRibbonTab}
@@ -270,7 +270,7 @@ export const OpenMatApp: React.FC = () => {
           </span>
           <span>|</span>
           <span className="font-mono text-gray-700">
-            Engine: {activeEngine === 'native' ? 'Native OpenMat v1.0.0' : 'Local MATLAB R2025b Bridge'}
+            Engine: {activeEngine === 'native' ? 'Native OpenMat v1.0.0' : 'Host Native Engine Bridge'}
           </span>
         </div>
         <div className="flex items-center space-x-4">

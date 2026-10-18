@@ -6,18 +6,19 @@ export interface BridgeExecutionResult {
   engineName: string;
 }
 
-export class MatlabBridge {
-  private matlabPath: string;
+export class HostEngineBridge {
+  private enginePath: string;
 
   constructor(customPath?: string) {
-    this.matlabPath = customPath || '/Applications/MATLAB_R2025b.app/bin/matlab';
+    this.enginePath = customPath || '';
   }
 
   getExecutablePath(): string {
-    return this.matlabPath;
+    return this.enginePath;
   }
 
   isAvailable(): boolean {
+    if (!this.enginePath) return false;
     if (typeof window !== 'undefined') {
       return !!(window as any).__OPENMAT_BRIDGE_AVAILABLE__;
     }
@@ -25,7 +26,6 @@ export class MatlabBridge {
     try {
       const processObj = (globalThis as any).process;
       if (!processObj?.versions?.node) return false;
-      // In Node environment, check if path exists
       return true;
     } catch {
       return false;
@@ -36,14 +36,14 @@ export class MatlabBridge {
     if (typeof window !== 'undefined') {
       const ipc = (window as any).electron?.ipcRenderer;
       if (ipc) {
-        return await ipc.invoke('matlab-execute-batch', { code, path: this.matlabPath });
+        return await ipc.invoke('host-engine-execute-batch', { code, path: this.enginePath });
       }
       return {
         stdout: '',
-        stderr: 'Local MATLAB bridge requires desktop/Node runtime or active local bridge server.',
+        stderr: 'Host engine bridge requires desktop/Node runtime or active local bridge server.',
         exitCode: 1,
         available: false,
-        engineName: 'Local MATLAB Bridge (Disconnected)'
+        engineName: 'Host Native Engine (Disconnected)'
       };
     }
 
@@ -52,7 +52,7 @@ export class MatlabBridge {
       const childProcess = await import('child_process');
       return new Promise<BridgeExecutionResult>((resolve) => {
         childProcess.execFile(
-          this.matlabPath,
+          this.enginePath,
           ['-batch', code],
           { timeout: 60000 },
           (error: any, stdout: string, stderr: string) => {
@@ -61,7 +61,7 @@ export class MatlabBridge {
               stderr: stderr || (error ? error.message : ''),
               exitCode: error ? (error.code ?? 1) : 0,
               available: true,
-              engineName: 'MATLAB R2025b (Host Native)'
+              engineName: 'Host Native Engine (Connected)'
             });
           }
         );
@@ -72,7 +72,7 @@ export class MatlabBridge {
         stderr: err.message || String(err),
         exitCode: 1,
         available: false,
-        engineName: 'Local MATLAB Bridge (Unavailable)'
+        engineName: 'Host Native Engine (Unavailable)'
       };
     }
   }

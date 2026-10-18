@@ -1,14 +1,14 @@
 import { describe, it, expect } from 'vitest';
-import { MatlabBridge } from '../src/engine/bridge';
+import { HostEngineBridge } from '../src/engine/bridge';
 
-describe('MatlabBridge', () => {
-  it('detects host MATLAB installation path', () => {
-    const bridge = new MatlabBridge();
-    expect(bridge.getExecutablePath()).toBe('/Applications/MATLAB_R2025b.app/bin/matlab');
+describe('HostEngineBridge', () => {
+  it('detects host engine execution path', () => {
+    const bridge = new HostEngineBridge();
+    expect(bridge.getExecutablePath()).toBe('');
   });
 
   it('runs batch command when executed in Node environment', async () => {
-    const bridge = new MatlabBridge();
+    const bridge = new HostEngineBridge();
     if (bridge.isAvailable()) {
       const res = await bridge.executeBatch("disp(40 + 2); exit;");
       expect(res.exitCode).toBe(0);

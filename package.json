@@ -1,7 +1,7 @@
 {
   "name": "openmat",
   "version": "1.0.0",
-  "description": "OpenMat: Open-Source MATLAB-Compatible Scientific Computing Environment & Desktop IDE",
+  "description": "OpenMat: Open-Source Scientific Computing Environment & Matrix IDE",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -10,13 +10,13 @@
     "test": "vitest run"
   },
   "keywords": [
-    "matlab",
-    "open-source",
     "scientific-computing",
     "matrix",
     "numerical-computing",
     "ide",
-    "openmat"
+    "openmat",
+    "linear-algebra",
+    "data-analysis"
   ],
   "author": "Diego Gonzalez Gonzalez",
   "license": "MIT",

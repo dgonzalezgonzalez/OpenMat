@@ -7,16 +7,16 @@ export default {
   theme: {
     extend: {
       colors: {
-        mw: {
-          blue: '#0076a8',
-          darkBlue: '#005f88',
-          lightBlue: '#e6f3f8',
-          grayBg: '#f0f0f0',
-          ribbonBg: '#f7f7f7',
-          border: '#cccccc',
-          darkBorder: '#999999',
-          prompt: '#204080',
-          selection: '#cce8ff'
+        om: {
+          blue: '#0284c7',
+          darkBlue: '#0369a1',
+          lightBlue: '#e0f2fe',
+          grayBg: '#f0f2f5',
+          ribbonBg: '#f0f2f5',
+          border: '#c9d0d8',
+          darkBorder: '#94a3b8',
+          prompt: '#1a365d',
+          selection: '#bae6fd'
         }
       }
     },

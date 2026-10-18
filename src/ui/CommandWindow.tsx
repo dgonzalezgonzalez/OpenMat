@@ -55,16 +55,16 @@ export const CommandWindow: React.FC<CommandWindowProps> = ({
 
   return (
     <div
-      className="mw-panel h-full flex flex-col cursor-text"
+      className="om-panel h-full flex flex-col cursor-text"
       onClick={() => inputRef.current?.focus()}
     >
       {/* Panel Header */}
-      <div className="mw-panel-header">
+      <div className="om-panel-header">
         <div className="flex items-center space-x-1">
           <Terminal size={13} className="text-gray-700" />
           <span>Command Window</span>
           <span className="text-[10px] text-gray-400 font-mono">
-            ({activeEngine === 'native' ? 'Native Engine' : 'Host MATLAB Bridge'})
+            ({activeEngine === 'native' ? 'Native Engine' : 'Host Native Engine'})
           </span>
         </div>
         <button
@@ -80,18 +80,18 @@ export const CommandWindow: React.FC<CommandWindowProps> = ({
       </div>
 
       {/* Output & REPL Scrollable Body */}
-      <div className="flex-1 mw-command-window p-3 overflow-y-auto">
+      <div className="flex-1 om-command-window p-3 overflow-y-auto">
         <div className="text-gray-500 text-xs mb-3 font-mono">
-          To get started, type a MATLAB command or expression and press Enter.
+          To get started, type a matrix command or expression and press Enter.
           <br />
-          Try: <code className="text-[#0076a8]">A = [1 2; 3 4]; inv(A) * A</code> or <code className="text-[#0076a8]">x = 0:0.1:10; plot(x, sin(x))</code>
+          Try: <code className="text-[#0284c7]">A = [1 2; 3 4]; inv(A) * A</code> or <code className="text-[#0284c7]">x = 0:0.1:10; plot(x, sin(x))</code>
         </div>
 
         {history.map((item, idx) => (
           <div key={idx} className="mb-2">
             {/* Command Echo */}
             <div className="flex items-center font-mono">
-              <span className="mw-prompt">&gt;&gt;</span>
+              <span className="om-prompt">&gt;&gt;</span>
               <span className="font-semibold text-gray-900">{item.command}</span>
             </div>
 
@@ -111,7 +111,7 @@ export const CommandWindow: React.FC<CommandWindowProps> = ({
 
         {/* Current Active Command Input Line */}
         <div className="flex items-center font-mono mt-1">
-          <span className="mw-prompt">&gt;&gt;</span>
+          <span className="om-prompt">&gt;&gt;</span>
           <input
             ref={inputRef}
             type="text"

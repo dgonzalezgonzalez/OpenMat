@@ -186,9 +186,9 @@ export const BUILTINS: Record<string, BuiltinFn> = {
   help: (args, ctx) => {
     const topic = args[0] ? String(args[0]) : '';
     if (!topic) {
-      ctx.output('OpenMat - Open-Source MATLAB-Compatible Scientific Computing Environment\nAvailable functions: zeros, ones, eye, rand, linspace, sin, cos, exp, log, inv, det, plot, scatter, etc.');
+      ctx.output('OpenMat - Open-Source Scientific Computing Environment & Matrix IDE\nAvailable functions: zeros, ones, eye, rand, linspace, sin, cos, exp, log, inv, det, plot, scatter, etc.');
     } else {
-      ctx.output(`HELP: Information about ${topic}\nIn OpenMat, '${topic}' conforms to the standard MATLAB calling specification.`);
+      ctx.output(`HELP: Information about ${topic}\nIn OpenMat, '${topic}' conforms to the standard matrix calling specification.`);
     }
     return null;
   },

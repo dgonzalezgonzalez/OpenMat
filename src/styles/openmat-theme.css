@@ -1,0 +1,121 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --om-backgroundColor-primary: #ffffff;
+  --om-backgroundColor-secondary: #f4f5f7;
+  --om-backgroundColor-ribbon: #f0f2f5;
+  --om-backgroundColor-panelHeader: #e4e7eb;
+  --om-backgroundColor-tabActive: #ffffff;
+  --om-backgroundColor-tabInactive: #e8ecf0;
+  --om-backgroundColor-toolbarButtonHover: #e0e6ed;
+  --om-backgroundColor-toolbarButtonActive: #d2dbe5;
+  --om-borderColor-primary: #c9d0d8;
+  --om-borderColor-secondary: #e1e4e8;
+  --om-borderColor-activeTab: #0284c7;
+  --om-color-primary: #1e293b;
+  --om-color-secondary: #64748b;
+  --om-color-blue: #0284c7;
+  --om-color-blueDark: #0369a1;
+  --om-color-prompt: #1a365d;
+  --om-color-ans: #0f172a;
+  --om-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --om-font-mono: "Menlo", "Monaco", "Consolas", monospace;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  font-family: var(--om-font-sans);
+  background-color: var(--om-backgroundColor-secondary);
+  color: var(--om-color-primary);
+  user-select: none;
+  overflow: hidden;
+  height: 100vh;
+}
+
+/* Toolstrip Ribbon Styles */
+.om-ribbon-tab {
+  padding: 4px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  border-top-left-radius: 4px;
+  border-top-right-radius: 4px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  transition: all 0.15s ease;
+}
+
+.om-ribbon-tab.active {
+  background-color: var(--om-backgroundColor-ribbon);
+  border-color: var(--om-borderColor-primary);
+  border-top: 3px solid var(--om-borderColor-activeTab);
+  color: var(--om-color-blue);
+}
+
+.om-ribbon-tab:not(.active):hover {
+  background-color: rgba(255, 255, 255, 0.6);
+}
+
+.om-tool-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  background: transparent;
+  transition: all 0.15s ease;
+}
+
+.om-tool-button:hover {
+  background-color: var(--om-backgroundColor-toolbarButtonHover);
+  border-color: var(--om-borderColor-primary);
+}
+
+.om-tool-button:active {
+  background-color: var(--om-backgroundColor-toolbarButtonActive);
+}
+
+/* Panel Dock Styles */
+.om-panel {
+  background: var(--om-backgroundColor-primary);
+  border: 1px solid var(--om-borderColor-primary);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.om-panel-header {
+  background: linear-gradient(to bottom, #f9fafb, #e5e7eb);
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #374151;
+  border-bottom: 1px solid var(--om-borderColor-primary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* Command Window REPL */
+.om-command-window {
+  font-family: var(--om-font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  background-color: #ffffff;
+  color: #111827;
+  overflow-y: auto;
+}
+
+.om-prompt {
+  color: var(--om-color-prompt);
+  font-weight: 700;
+  margin-right: 6px;
+}

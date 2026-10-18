@@ -38,9 +38,9 @@ export const CurrentFolder: React.FC<CurrentFolderProps> = ({
   );
 
   return (
-    <div className="mw-panel h-full flex flex-col">
+    <div className="om-panel h-full flex flex-col">
       {/* Panel Header */}
-      <div className="mw-panel-header">
+      <div className="om-panel-header">
         <div className="flex items-center space-x-1">
           <Folder size={13} className="text-amber-500 fill-amber-500" />
           <span>Current Folder</span>

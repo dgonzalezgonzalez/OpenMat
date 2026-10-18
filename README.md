@@ -5,7 +5,7 @@
 <h1 align="center">OpenMat</h1>
 
 <p align="center">
-  <strong>Modern, Open-Source MATLAB-Compatible Scientific Computing Environment & Desktop IDE</strong>
+  <strong>Modern, Open-Source Scientific Computing Environment & Matrix IDE</strong>
 </p>
 
 <p align="center">
@@ -19,14 +19,14 @@
 
 ## 🌟 Overview
 
-**OpenMat** is an open-source numerical computing environment and IDE designed to be compatible with MATLAB syntax, scripts, and workflows. Built with a clean-room architecture, OpenMat replicates the signature **MATLAB R2025b Desktop UI** while providing both an in-memory native computation engine and a bridge to local host installations.
+**OpenMat** is a high-performance open-source numerical computing environment, interactive script editor, and desktop IDE. Designed specifically for technical computing, matrix mathematics, algorithm design, and scientific data visualization, OpenMat pairs a clean-room in-memory execution engine with an intuitive, dockable desktop UI.
 
 ### Key Highlights
-- 🎨 **Replicated MATLAB R2025b UI**: Authentic Toolstrip ribbon (HOME, PLOTS, APPS, EDITOR), interactive Command Window REPL with `>>` prompt, Workspace variable inspector, Current Folder explorer, and dockable Figure window.
-- ⚡ **Zero-Dependency Native Engine**: Full MATLAB syntax support with 1-based indexing, slicing (`A(1:2, :)`), element-wise operators (`.*`, `./`, `.^`), colon ranges (`1:2:10`), matrix multiplication, determinant, inversion, statistics, and control flow (`for`, `while`, `if/else`).
-- 📈 **Integrated Plotting Subsystem**: Interactive 2D line plots (`plot`), scatter charts (`scatter`), bar charts (`bar`), and histograms (`histogram`) with gridlines, titles, and legends.
-- 🔌 **Host MATLAB R2025b Bridge**: Seamlessly execute code through your locally installed MATLAB CLI (`matlab -batch`) when specialized proprietary toolboxes or Simulink models are required.
-- 🛡️ **Clean-Room & MIT Licensed**: Written 100% from scratch with an original mathematical harmonic wave logo `[ · ]`.
+- 🎨 **Unified Desktop UI**: Toolstrip ribbon (HOME, PLOTS, APPS, EDITOR), interactive Command Window REPL with `>>` prompt, real-time Workspace variable table, Current Folder file browser, and integrated Figure plotting canvas.
+- ⚡ **Zero-Dependency Native Engine**: Full matrix language syntax with 1-based indexing, slicing (`A(1:2, :)`), element-wise operators (`.*`, `./`, `.^`), colon ranges (`1:2:10`), matrix multiplication, determinant, matrix inversion, statistics, and control flow (`for`, `while`, `if/else`).
+- 📈 **Interactive Plotting Subsystem**: Rich 2D line plots (`plot`), scatter charts (`scatter`), bar charts (`bar`), and histograms (`histogram`) with gridlines, titles, and legends.
+- 🔌 **Host Native Engine Bridge**: Pluggable backend interface allowing commands to execute directly on the host machine's native engine when running complex computational toolboxes or simulations.
+- 🛡️ **Clean-Room & MIT Licensed**: Engineered 100% from scratch with an original geometric matrix emblem `[ · ]` and permissive MIT licensing.
 
 ---
 
@@ -48,7 +48,7 @@ npm install
 npm run dev
 ```
 
-Open your browser to `http://localhost:3000` to launch the OpenMat Desktop IDE!
+Open your browser to `http://localhost:3000` to launch the OpenMat IDE!
 
 ### Run Automated Tests
 
@@ -79,7 +79,7 @@ flowchart TD
 
     CW & Editor --> EngineRouter{"Engine Router"}
     EngineRouter -->|"Instant / In-Memory"| Native["Native Engine (Lexer, Parser, Matrix Core)"]
-    EngineRouter -->|"Full Toolboxes"| Bridge["Local MATLAB R2025b Bridge (matlab -batch)"]
+    EngineRouter -->|"External Batch"| Bridge["Host Native Engine Bridge"]
 
     Native --> WS
     Native --> Fig
@@ -87,7 +87,7 @@ flowchart TD
     Bridge --> Fig
 ```
 
-For full details, see the [Architecture Document](docs/ARCHITECTURE.md) and [Reverse Engineering Analysis](docs/REA_ANALYSIS.md).
+For full details, see the [Architecture Document](docs/ARCHITECTURE.md) and [System Specification](docs/SYSTEM_SPECIFICATION.md).
 
 ---
 
@@ -95,7 +95,7 @@ For full details, see the [Architecture Document](docs/ARCHITECTURE.md) and [Rev
 
 OpenMat includes a built-in interactive demo script (`demo.m`):
 
-```matlab
+```
 % 1. Create a 3x3 symmetric matrix
 A = [4, 1, 2; 1, 5, 3; 2, 3, 6];
 disp('Matrix A:');
@@ -122,7 +122,7 @@ grid on;
 
 ## 📊 Supported Features Matrix
 
-| Feature Area | Native Engine | Host MATLAB Bridge |
+| Feature Area | Native Engine | Host Engine Bridge |
 |---|:---:|:---:|
 | Matrix Literals `[1, 2; 3, 4]` | ✅ | ✅ |
 | 1-Based Indexing & Slicing `A(1:2, :)` | ✅ | ✅ |
@@ -133,13 +133,7 @@ grid on;
 | User Functions (`function [y] = f(x)`) | ✅ | ✅ |
 | Plotting (`plot`, `scatter`, `bar`, `histogram`) | ✅ | ✅ |
 | Workspace Variable Inspection | ✅ | ✅ |
-| Specialized Toolboxes & Simulink | Via Bridge | ✅ |
-
----
-
-## 📜 Legal & Clean-Room Notice
-
-OpenMat is an independent, clean-room open-source project. MATLAB and Simulink are registered trademarks of The MathWorks, Inc. OpenMat is not affiliated with, endorsed by, or sponsored by The MathWorks, Inc. All source code in this repository is original and licensed under the MIT License.
+| External Headless Scripts | ✅ | ✅ |
 
 ---
 

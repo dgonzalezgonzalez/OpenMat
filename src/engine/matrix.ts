@@ -110,7 +110,7 @@ export class Matrix {
     return this.data[0][0];
   }
 
-  // 1-based indexing as in MATLAB
+  // 1-based matrix indexing convention
   get(row: number, col: number): number {
     if (row < 1 || row > this.rows || col < 1 || col > this.cols) {
       throw new Error(`Index exceeds matrix dimensions: index (${row}, ${col}) on ${this.rows}x${this.cols} matrix`);
@@ -122,7 +122,7 @@ export class Matrix {
     if (row < 1 || col < 1) {
       throw new Error(`Subscript indices must either be real positive integers or logicals`);
     }
-    // Dynamic expansion if needed (like MATLAB)
+    // Dynamic matrix expansion
     while (this.rows < row) {
       this.data.push(new Array(this.cols).fill(0));
       (this as any).rows++;

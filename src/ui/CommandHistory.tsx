@@ -24,9 +24,9 @@ export const CommandHistory: React.FC<CommandHistoryProps> = ({
   );
 
   return (
-    <div className="mw-panel h-full flex flex-col">
+    <div className="om-panel h-full flex flex-col">
       {/* Panel Header */}
-      <div className="mw-panel-header">
+      <div className="om-panel-header">
         <div className="flex items-center space-x-1">
           <History size={13} className="text-gray-600" />
           <span>Command History</span>
