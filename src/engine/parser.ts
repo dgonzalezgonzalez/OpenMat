@@ -4,10 +4,18 @@ import {
   ProgramNode,
   StatementNode,
   AssignmentNode,
+  MultiAssignmentNode,
+  IdentifierNode,
   IfStatementNode,
   ForStatementNode,
   WhileStatementNode,
   FunctionDefNode,
+  SwitchStatementNode,
+  SwitchCaseNode,
+  TryStatementNode,
+  BreakStatementNode,
+  ContinueStatementNode,
+  ReturnStatementNode,
   CommandNode
 } from './types';
 
@@ -45,6 +53,11 @@ export class Parser {
     if (this.matchKeyword('for')) return this.parseForStatement(startLine);
     if (this.matchKeyword('while')) return this.parseWhileStatement(startLine);
     if (this.matchKeyword('function')) return this.parseFunctionDef(startLine);
+    if (this.matchKeyword('switch')) return this.parseSwitchStatement(startLine);
+    if (this.matchKeyword('try')) return this.parseTryStatement(startLine);
+    if (this.matchKeyword('break')) return this.parseBreakStatement(startLine);
+    if (this.matchKeyword('continue')) return this.parseContinueStatement(startLine);
+    if (this.matchKeyword('return')) return this.parseReturnStatement(startLine);
 
     // Check for command syntax (e.g. `clear x y`, `clc`, `help plot`)
     if (this.isCommandSyntax()) {
@@ -88,6 +101,23 @@ export class Parser {
   }
 
   private parseAssignmentOrExpression(): ASTNode {
+    // Multiple assignment: `[p, q] = f(x)`.
+    // The bracket list is only a multi-assignment when it is immediately
+    // followed by `=` and every element is a plain identifier.
+    if (this.checkDelimiter('[')) {
+      const snapshot = this.mark();
+      const targets = this.tryParseIdentifierList();
+      if (targets && this.matchOperator('=')) {
+        const value = this.parseExpression();
+        return {
+          type: 'MultiAssignment',
+          targets,
+          value
+        } as MultiAssignmentNode;
+      }
+      this.restore(snapshot);
+    }
+
     const left = this.parseExpression();
 
     if (this.matchOperator('=')) {
@@ -95,6 +125,7 @@ export class Parser {
       if (
         left.type === 'Identifier' ||
         left.type === 'IndexExpr' ||
+        left.type === 'FieldExpr' ||
         left.type === 'MatrixLiteral'
       ) {
         return {
@@ -107,6 +138,32 @@ export class Parser {
     }
 
     return left;
+  }
+
+  /**
+   * Try to parse `[a, b, c]` as a list of identifiers.
+   * Returns null (and leaves the token position untouched) when the bracket
+   * holds anything other than plain names, e.g. a matrix literal.
+   */
+  private tryParseIdentifierList(): IdentifierNode[] | null {
+    const snapshot = this.mark();
+    if (!this.matchDelimiter('[')) return null;
+    const names: IdentifierNode[] = [];
+    if (!this.checkDelimiter(']')) {
+      do {
+        if (!this.checkTokenType('IDENTIFIER')) {
+          this.restore(snapshot);
+          return null;
+        }
+        this.advance();
+        names.push({ type: 'Identifier', name: this.previous().value });
+      } while (this.matchDelimiter(','));
+    }
+    if (!this.matchDelimiter(']')) {
+      this.restore(snapshot);
+      return null;
+    }
+    return names;
   }
 
   // Precedence levels:
@@ -240,6 +297,14 @@ export class Parser {
       if (this.matchOperator('\'') || this.matchOperator('.\'')) {
         const op = this.previous().value;
         expr = { type: 'UnaryOp', operator: op, operand: expr, isPostfix: true };
+      } else if (this.matchOperator('.')) {
+        // Struct field access: `s.field`. The field name is a bare
+        // identifier; MATLAB does not allow arbitrary expressions here.
+        const name = this.consumeTokenType(
+          'IDENTIFIER',
+          "Expected a field name after '.'"
+        );
+        expr = { type: 'FieldExpr', target: expr, field: name.value };
       } else if (this.matchDelimiter('(')) {
         // Function call or indexing
         const args: (ASTNode | 'colon')[] = [];
@@ -254,11 +319,15 @@ export class Parser {
         }
         this.consumeDelimiter(')', "Expected ')' after argument/index list");
 
+        // `name(...)` is ambiguous until evaluation time: it is a function
+        // call when `name` resolves to a function and an index expression
+        // when it resolves to a matrix. Emitting an IndexExpr keeps
+        // `A(1, 2) = 99` assignable; the interpreter resolves the ambiguity.
         if (expr.type === 'Identifier') {
           expr = {
-            type: 'FunctionCall',
-            callee: expr.name,
-            args: args as ASTNode[]
+            type: 'IndexExpr',
+            target: expr,
+            indices: args
           };
         } else {
           expr = {
@@ -288,6 +357,13 @@ export class Parser {
       return { type: 'Identifier', name: this.previous().value };
     }
 
+    // `end` is a valid expression inside an index expression: it denotes the
+    // last index along the indexed dimension (e.g. A(end, 1)).
+    if (this.checkKeyword('end') && this.isEndInExpressionPosition()) {
+      this.advance();
+      return { type: 'Identifier', name: 'end' };
+    }
+
     if (this.matchDelimiter('(')) {
       const expr = this.parseExpression();
       this.consumeDelimiter(')', "Expected ')' after expression");
@@ -301,6 +377,31 @@ export class Parser {
     throw new Error(`Unexpected token '${this.peek().value}' at line ${this.peek().line}, col ${this.peek().col}`);
   }
 
+  /**
+   * Distinguish `A(end, 1)` (an index expression) from the `end` that closes
+   * an if/for/while/function block.
+   *
+   * The block form always follows a complete statement, while the index form
+   * always follows `(` or `,` — the separators of an argument list.
+   */
+  private isEndInExpressionPosition(): boolean {
+    if (this.current === 0) return false;
+    const prev = this.tokens[this.current - 1];
+
+    // `A(end, 1)`, `A(1, end)`: `end` directly inside an index list.
+    if (prev.type === 'DELIMITER' && (prev.value === '(' || prev.value === ',')) {
+      return true;
+    }
+
+    // `A(1:end-1)`, `A(end-1)`: `end` as the left operand of an operator
+    // inside an index expression. The block-closing `end` never follows an
+    // operator, because a statement is always complete by then.
+    if (prev.type === 'OPERATOR') {
+      return true;
+    }
+
+    return false;
+  }
   private parseMatrixLiteral(): ASTNode {
     const rows: ASTNode[][] = [];
     let currentRow: ASTNode[] = [];
@@ -314,6 +415,9 @@ export class Parser {
         continue;
       }
 
+      // A `,` inside a matrix literal is a column separator; a space acts the
+      // same way, but only when it is unambiguous (the lexer already decides
+      // that and emits a `,` delimiter in that case).
       currentRow.push(this.parseExpression());
 
       if (this.matchDelimiter(',')) {
@@ -458,6 +562,112 @@ export class Parser {
     };
   }
 
+  /**
+   * Parse `switch expr / case v / ... / otherwise / ... / end`.
+   */
+  private parseSwitchStatement(line: number): StatementNode {
+    const discriminant = this.parseExpression();
+    this.consumeStatementTerminator();
+    const cases: SwitchCaseNode[] = [];
+
+    while (!this.isAtEnd() && !this.checkKeyword('end')) {
+      if (this.matchKeyword('case')) {
+        const labels: ASTNode[] = [this.parseExpression()];
+        // Support `case {1, 2, 3}` cell-array style labels.
+        while (this.matchOperator(',')) {
+          labels.push(this.parseExpression());
+        }
+        this.consumeStatementTerminator();
+        const body = this.parseBlock(['case', 'otherwise', 'end']);
+        cases.push({ labels, body });
+        continue;
+      }
+      if (this.matchKeyword('otherwise')) {
+        this.consumeStatementTerminator();
+        const body = this.parseBlock(['case', 'otherwise', 'end']);
+        cases.push({ labels: [], body });
+        continue;
+      }
+      this.skipSeparators();
+    }
+
+    this.consumeKeyword('end', "Expected 'end' to close switch statement");
+    const suppress = this.consumeStatementTerminator();
+
+    return {
+      type: 'Statement',
+      expression: {
+        type: 'SwitchStatement',
+        discriminant,
+        cases
+      } as SwitchStatementNode,
+      suppressOutput: suppress,
+      line
+    };
+  }
+
+  /**
+   * Parse `try / ... / catch / ... / end`.
+   */
+  private parseTryStatement(line: number): StatementNode {
+    this.consumeStatementTerminator();
+    const body = this.parseBlock(['catch', 'end']);
+    let catchBody: StatementNode[] = [];
+    let catchVar: string | undefined;
+    if (this.matchKeyword('catch')) {
+      // `catch` may bind the error object to a variable: `catch err`.
+      if (this.checkTokenType('IDENTIFIER')) {
+        catchVar = this.advance().value;
+      }
+      this.consumeStatementTerminator();
+      catchBody = this.parseBlock(['end']);
+    }
+    this.consumeKeyword('end', "Expected 'end' to close try statement");
+    const suppress = this.consumeStatementTerminator();
+
+    return {
+      type: 'Statement',
+      expression: {
+        type: 'TryStatement',
+        body,
+        catchBody,
+        catchVar
+      } as TryStatementNode,
+      suppressOutput: suppress,
+      line
+    };
+  }
+
+  private parseBreakStatement(line: number): StatementNode {
+    const suppress = this.consumeStatementTerminator();
+    return {
+      type: 'Statement',
+      expression: { type: 'BreakStatement' } as BreakStatementNode,
+      suppressOutput: suppress,
+      line
+    };
+  }
+
+  private parseContinueStatement(line: number): StatementNode {
+    const suppress = this.consumeStatementTerminator();
+    return {
+      type: 'Statement',
+      expression: { type: 'ContinueStatement' } as ContinueStatementNode,
+      suppressOutput: suppress,
+      line
+    };
+  }
+
+  private parseReturnStatement(line: number): StatementNode {
+    const suppress = this.consumeStatementTerminator();
+    return {
+      type: 'Statement',
+      expression: { type: 'ReturnStatement' } as ReturnStatementNode,
+      suppressOutput: suppress,
+      line
+    };
+  }
+
   private parseBlock(untilKeywords: string[]): StatementNode[] {
     const statements: StatementNode[] = [];
     this.skipSeparators();
@@ -576,6 +786,10 @@ export class Parser {
     return false;
   }
 
+  private checkTokenType(type: string): boolean {
+    return !this.isAtEnd() && this.peek().type === type;
+  }
+
   private consumeTokenType(type: string, msg: string): Token {
     if (!this.isAtEnd() && this.peek().type === type) return this.advance();
     throw new Error(`${msg} at line ${this.peek().line}`);
@@ -597,5 +811,15 @@ export class Parser {
   private advance(): Token {
     if (!this.isAtEnd()) this.current++;
     return this.previous();
+  }
+
+  /** Save the current token position so it can be restored later. */
+  private mark(): number {
+    return this.current;
+  }
+
+  /** Restore a previously saved token position. */
+  private restore(pos: number): void {
+    this.current = pos;
   }
 }

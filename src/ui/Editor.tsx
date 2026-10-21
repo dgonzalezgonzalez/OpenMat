@@ -16,6 +16,7 @@ interface EditorProps {
   onNewTab: () => void;
   onChangeContent: (id: string, content: string) => void;
   onRunScript: () => void;
+  onSaveTab: (id: string) => void;
 }
 
 export const Editor: React.FC<EditorProps> = ({
@@ -25,7 +26,8 @@ export const Editor: React.FC<EditorProps> = ({
   onCloseTab,
   onNewTab,
   onChangeContent,
-  onRunScript
+  onRunScript,
+  onSaveTab
 }) => {
   const activeTab = tabs.find(t => t.id === activeTabId) || tabs[0];
   const lines = (activeTab?.content || '').split('\n');
@@ -81,8 +83,10 @@ export const Editor: React.FC<EditorProps> = ({
             <span>Run Script</span>
           </button>
           <button
-            onClick={() => {}}
-            className="flex items-center space-x-1 px-2.5 py-1 bg-white hover:bg-gray-100 text-gray-700 font-medium border border-gray-300 rounded text-[11px]"
+            onClick={() => activeTab && onSaveTab(activeTab.id)}
+            disabled={!activeTab}
+            title="Save this script to the virtual file system"
+            className="flex items-center space-x-1 px-2.5 py-1 bg-white hover:bg-gray-100 text-gray-700 font-medium border border-gray-300 rounded text-[11px] disabled:opacity-40"
           >
             <Save size={12} className="text-blue-600" />
             <span>Save</span>

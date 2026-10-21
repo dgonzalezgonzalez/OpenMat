@@ -19,6 +19,7 @@ export type ASTNode =
   | ProgramNode
   | StatementNode
   | AssignmentNode
+  | MultiAssignmentNode
   | BinaryOpNode
   | UnaryOpNode
   | NumberLiteralNode
@@ -27,11 +28,17 @@ export type ASTNode =
   | MatrixLiteralNode
   | RangeExprNode
   | IndexExprNode
+  | FieldExprNode
   | FunctionCallNode
   | IfStatementNode
   | ForStatementNode
   | WhileStatementNode
   | FunctionDefNode
+  | SwitchStatementNode
+  | TryStatementNode
+  | BreakStatementNode
+  | ContinueStatementNode
+  | ReturnStatementNode
   | CommandNode;
 
 export interface ProgramNode {
@@ -48,7 +55,7 @@ export interface StatementNode {
 
 export interface AssignmentNode {
   type: 'Assignment';
-  target: IdentifierNode | IndexExprNode | MatrixLiteralNode;
+  target: IdentifierNode | IndexExprNode | FieldExprNode | MatrixLiteralNode;
   value: ASTNode;
 }
 
@@ -99,10 +106,35 @@ export interface IndexExprNode {
   indices: (ASTNode | 'colon')[];
 }
 
+/**
+ * Struct field access: `s.field`, or `err.message` on a caught error.
+ *
+ * MATLAB's most common use is reading a caught error's message, so the
+ * engine models structs as plain objects and resolves the field at runtime.
+ */
+export interface FieldExprNode {
+  type: 'FieldExpr';
+  target: ASTNode;
+  field: string;
+}
+
 export interface FunctionCallNode {
   type: 'FunctionCall';
   callee: string;
   args: ASTNode[];
+}
+
+/**
+ * Multiple assignment: `[p, q] = f(x)`.
+ *
+ * MATLAB returns several values from one function call and binds them to
+ * several names. The targets are plain identifiers; the value is the call
+ * expression whose outputs are distributed across them.
+ */
+export interface MultiAssignmentNode {
+  type: 'MultiAssignment';
+  targets: IdentifierNode[];
+  value: ASTNode;
 }
 
 export interface IfStatementNode {
@@ -132,6 +164,38 @@ export interface FunctionDefNode {
   inputs: string[];
   outputs: string[];
   body: StatementNode[];
+}
+
+export interface SwitchCaseNode {
+  /** `case` labels; an empty list means the `otherwise` branch. */
+  labels: ASTNode[];
+  body: StatementNode[];
+}
+
+export interface SwitchStatementNode {
+  type: 'SwitchStatement';
+  discriminant: ASTNode;
+  cases: SwitchCaseNode[];
+}
+
+export interface TryStatementNode {
+  type: 'TryStatement';
+  body: StatementNode[];
+  catchBody: StatementNode[];
+  /** Variable that receives the error object, e.g. `catch err`. */
+  catchVar?: string;
+}
+
+export interface BreakStatementNode {
+  type: 'BreakStatement';
+}
+
+export interface ContinueStatementNode {
+  type: 'ContinueStatement';
+}
+
+export interface ReturnStatementNode {
+  type: 'ReturnStatement';
 }
 
 export interface CommandNode {

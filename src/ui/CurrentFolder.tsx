@@ -23,13 +23,15 @@ interface CurrentFolderProps {
   files: FileItem[];
   onSelectFile: (file: FileItem) => void;
   onNewFile: () => void;
+  onNavigateUp: () => void;
 }
 
 export const CurrentFolder: React.FC<CurrentFolderProps> = ({
   currentPath,
   files,
   onSelectFile,
-  onNewFile
+  onNewFile,
+  onNavigateUp
 }) => {
   const [search, setSearch] = useState('');
 
@@ -52,7 +54,12 @@ export const CurrentFolder: React.FC<CurrentFolderProps> = ({
 
       {/* Path Bar */}
       <div className="flex items-center space-x-1 px-2 py-1 bg-[#f8fafc] border-b border-[#e2e8f0] text-xs">
-        <button title="Up one folder" className="p-0.5 hover:bg-gray-200 rounded text-gray-600">
+        <button
+          onClick={onNavigateUp}
+          title="Up one folder"
+          disabled={currentPath === '/'}
+          className="p-0.5 hover:bg-gray-200 rounded text-gray-600 disabled:opacity-40 disabled:hover:bg-transparent"
+        >
           <ArrowUp size={12} />
         </button>
         <div className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[11px] text-gray-700 bg-white px-1.5 py-0.5 border border-gray-300 rounded">

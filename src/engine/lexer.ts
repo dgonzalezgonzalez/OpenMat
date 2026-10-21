@@ -6,6 +6,13 @@ const KEYWORDS = new Set([
   'try', 'catch', 'global', 'persistent'
 ]);
 
+/**
+ * Keywords that are also valid in expression positions. `end` is the last
+ * index of a dimension inside an index expression (e.g. `A(end, 1)`), and
+ * `case`/`catch`/`otherwise` introduce their block body.
+ */
+export const EXPRESSION_KEYWORDS = new Set(['end']);
+
 export class Lexer {
   private readonly source: string;
   private pos: number = 0;
@@ -35,6 +42,20 @@ export class Lexer {
         } else {
           this.skipLineComment();
         }
+        continue;
+      }
+
+      // Line continuation: `...` at the end of a line joins it with the
+      // next one. MATLAB requires the ellipsis to be followed by a comment
+      // or the end of the line.
+      if (ch === '.' && this.peek(1) === '.' && this.peek(2) === '.') {
+        this.advance();
+        this.advance();
+        this.advance();
+        this.skipLineComment();
+        this.advance(); // consume the newline
+        this.line++;
+        this.col = 1;
         continue;
       }
 
@@ -83,6 +104,15 @@ export class Lexer {
       }
       if (ch === '\'' && this.isTransposeContext()) {
         this.addToken('OPERATOR', '\'');
+        this.advance();
+        continue;
+      }
+
+      // Struct field access: `s.field`, `err.message`. A `.` that is not
+      // followed by a digit, quote or an element-wise operator starts a
+      // field name.
+      if (ch === '.' && this.isAlpha(this.peek(1))) {
+        this.addToken('OPERATOR', '.');
         this.advance();
         continue;
       }
@@ -157,6 +187,17 @@ export class Lexer {
     if (nextChar === ',' || nextChar === ';' || nextChar === ']' || nextChar === '\n') {
       return false;
     }
+
+    // MATLAB's sign rule inside a matrix literal: a `+`/`-` that follows a
+    // space and is *not* followed by a space introduces a new element with a
+    // signed value (`[1 -1]` is two elements), while a sign followed by a
+    // space stays a binary operator (`[1 - 1]` is a single element).
+    if (nextChar === '+' || nextChar === '-') {
+      const after = this.source[i + 1];
+      if (after === ' ' || after === '\t') return false;
+      return isPrevVal;
+    }
+
     const isNextVal = this.isDigit(nextChar) || this.isAlpha(nextChar) || nextChar === '[' || nextChar === '(' || nextChar === '\'' || nextChar === '"';
 
     return isPrevVal && isNextVal;

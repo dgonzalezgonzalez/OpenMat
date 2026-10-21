@@ -31,6 +31,15 @@ interface RibbonProps {
   setActiveEngine: (engine: 'native' | 'bridge') => void;
   bridgeAvailable: boolean;
   onOpenPlotGallery: (type: string) => void;
+  onOpenFileDialog: () => void;
+  onFindFiles: (term: string) => void;
+  onImportData: () => void;
+  onSaveWorkspace: () => void;
+  onToggleLayout: () => void;
+  onShowHelp: () => void;
+  onOpenCommunity: () => void;
+  onOpenApp: (app: 'linalg' | 'signal') => void;
+  onShowMessage: (message: string) => void;
 }
 
 export const Ribbon: React.FC<RibbonProps> = ({
@@ -43,7 +52,16 @@ export const Ribbon: React.FC<RibbonProps> = ({
   activeEngine,
   setActiveEngine,
   bridgeAvailable,
-  onOpenPlotGallery
+  onOpenPlotGallery,
+  onOpenFileDialog,
+  onFindFiles,
+  onImportData,
+  onSaveWorkspace,
+  onToggleLayout,
+  onShowHelp,
+  onOpenCommunity,
+  onOpenApp,
+  onShowMessage
 }) => {
   return (
     <div className="w-full bg-[#f0f2f5] border-b border-[#c9d0d8] flex flex-col select-none">
@@ -96,11 +114,11 @@ export const Ribbon: React.FC<RibbonProps> = ({
                   <span className="text-[10px] mt-1 text-center font-medium">New Script</span>
                 </button>
                 <div className="flex flex-col space-y-1">
-                  <button className="flex items-center space-x-1 px-2 py-0.5 text-[11px] hover:bg-[#e0e6ed] rounded">
+                  <button onClick={onOpenFileDialog} className="flex items-center space-x-1 px-2 py-0.5 text-[11px] hover:bg-[#e0e6ed] rounded">
                     <FolderOpen size={13} className="text-amber-600" />
                     <span>Open</span>
                   </button>
-                  <button className="flex items-center space-x-1 px-2 py-0.5 text-[11px] hover:bg-[#e0e6ed] rounded">
+                  <button onClick={() => onFindFiles('')} className="flex items-center space-x-1 px-2 py-0.5 text-[11px] hover:bg-[#e0e6ed] rounded">
                     <Search size={13} className="text-gray-600" />
                     <span>Find Files</span>
                   </button>
@@ -117,11 +135,11 @@ export const Ribbon: React.FC<RibbonProps> = ({
                   <span className="text-[10px] mt-1 text-center font-medium">Clear WS</span>
                 </button>
                 <div className="flex flex-col space-y-1">
-                  <button className="flex items-center space-x-1 px-2 py-0.5 text-[11px] hover:bg-[#e0e6ed] rounded">
+                  <button onClick={onImportData} className="flex items-center space-x-1 px-2 py-0.5 text-[11px] hover:bg-[#e0e6ed] rounded">
                     <Layers size={13} className="text-indigo-600" />
                     <span>Import Data</span>
                   </button>
-                  <button className="flex items-center space-x-1 px-2 py-0.5 text-[11px] hover:bg-[#e0e6ed] rounded">
+                  <button onClick={onSaveWorkspace} className="flex items-center space-x-1 px-2 py-0.5 text-[11px] hover:bg-[#e0e6ed] rounded">
                     <Save size={13} className="text-blue-600" />
                     <span>Save WS</span>
                   </button>
@@ -166,7 +184,7 @@ export const Ribbon: React.FC<RibbonProps> = ({
                     </option>
                   </select>
                 </div>
-                <button className="om-tool-button w-12">
+                <button onClick={onToggleLayout} className="om-tool-button w-12">
                   <Settings size={20} className="text-gray-600" />
                   <span className="text-[9px] mt-1 text-center">Layout</span>
                 </button>
@@ -177,11 +195,11 @@ export const Ribbon: React.FC<RibbonProps> = ({
             {/* RESOURCES SECTION */}
             <div className="flex flex-col items-center h-full px-3">
               <div className="flex items-center space-x-2">
-                <button className="om-tool-button w-12">
+                <button onClick={onShowHelp} className="om-tool-button w-12">
                   <HelpCircle size={22} className="text-blue-600" />
                   <span className="text-[10px] mt-1 text-center">Help</span>
                 </button>
-                <button className="om-tool-button w-12">
+                <button onClick={onOpenCommunity} className="om-tool-button w-12">
                   <Sparkles size={22} className="text-purple-600" />
                   <span className="text-[10px] mt-1 text-center">Community</span>
                 </button>
@@ -214,20 +232,26 @@ export const Ribbon: React.FC<RibbonProps> = ({
 
         {activeTab === 'APPS' && (
           <div className="flex items-center space-x-3 text-xs text-gray-600">
-            <div className="p-2 border border-dashed border-gray-300 rounded bg-white flex items-center space-x-2">
+            <button
+              onClick={() => onOpenApp('linalg')}
+              className="p-2 border border-dashed border-gray-300 rounded bg-white flex items-center space-x-2 hover:border-[#0076a8] hover:bg-[#f0f9ff] text-left"
+            >
               <Layers size={20} className="text-blue-600" />
               <div>
                 <div className="font-semibold text-gray-800">Linear Algebra Tool</div>
                 <div className="text-[10px] text-gray-500">Eigenvalues, SVD & Inverses</div>
               </div>
-            </div>
-            <div className="p-2 border border-dashed border-gray-300 rounded bg-white flex items-center space-x-2">
+            </button>
+            <button
+              onClick={() => onOpenApp('signal')}
+              className="p-2 border border-dashed border-gray-300 rounded bg-white flex items-center space-x-2 hover:border-[#0076a8] hover:bg-[#f0f9ff] text-left"
+            >
               <BarChart2 size={20} className="text-amber-600" />
               <div>
                 <div className="font-semibold text-gray-800">Signal Analysis App</div>
                 <div className="text-[10px] text-gray-500">Waveforms & Harmonics</div>
               </div>
-            </div>
+            </button>
           </div>
         )}
 

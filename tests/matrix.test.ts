@@ -42,11 +42,17 @@ describe('Matrix Engine', () => {
     expect(a.det()).toBeCloseTo(10);
 
     const invA = a.inv();
-    const product = a.mul(invA);
+    expect(invA).not.toBeNull();
+    const product = a.mul(invA!);
     expect(product.data[0][0]).toBeCloseTo(1);
     expect(product.data[0][1]).toBeCloseTo(0);
     expect(product.data[1][0]).toBeCloseTo(0);
     expect(product.data[1][1]).toBeCloseTo(1);
+  });
+
+  it('reports a singular matrix instead of throwing on inverse', () => {
+    const singular = new Matrix(2, 2, [[1, 2], [2, 4]]);
+    expect(singular.inv()).toBeNull();
   });
 
   it('performs element-wise operations and transpose', () => {
