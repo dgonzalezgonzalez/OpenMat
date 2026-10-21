@@ -39,6 +39,7 @@ export type ASTNode =
   | BreakStatementNode
   | ContinueStatementNode
   | ReturnStatementNode
+  | AnonymousFunctionNode
   | CommandNode;
 
 export interface ProgramNode {
@@ -202,6 +203,61 @@ export interface CommandNode {
   type: 'Command';
   name: string;
   args: string[];
+}
+
+/**
+ * An anonymous function: `@(x) x + 1`, or a named handle such as `@sin`.
+ *
+ * The body is a single expression, exactly as in MATLAB — an anonymous
+ * function cannot contain a statement list. A named handle has no body of
+ * its own; it refers to a builtin or a user function by name.
+ */
+export interface AnonymousFunctionNode {
+  type: 'AnonymousFunction';
+  params: string[];
+  body: ASTNode;
+  /** The function a named handle such as `@sin` refers to. */
+  namedTarget?: string;
+}
+
+/**
+ * A function handle — the runtime value of `@(x) x + 1` or `@sin`.
+ *
+ * MATLAB captures the *workspace* when the handle is created, so the closure
+ * is a snapshot of the variables that were in scope at that moment. A named
+ * handle has no body of its own: it refers to a builtin or a user function.
+ */
+export interface FunctionHandle {
+  kind: 'function_handle';
+  params: string[];
+  body: ASTNode;
+  namedTarget?: string;
+  /** The workspace captured when the handle was created. */
+  closure: Record<string, any>;
+  /** How MATLAB displays the handle, e.g. `@(x)x+1`. */
+  text: string;
+}
+
+/** Type guard for a function handle value. */
+export function isFunctionHandle(v: any): v is FunctionHandle {
+  return !!v && typeof v === 'object' && v.kind === 'function_handle';
+}
+
+/**
+ * Build a handle to a named function, the way `str2func('sin')` does.
+ *
+ * The handle has no body of its own: calling it dispatches to the named
+ * builtin or user function.
+ */
+export function makeNamedFunctionHandle(name: string): FunctionHandle {
+  return {
+    kind: 'function_handle',
+    params: [],
+    body: { type: 'Identifier', name },
+    namedTarget: name,
+    closure: {},
+    text: `@${name}`
+  };
 }
 
 export type Value = number | string | boolean | any; // Matrix or primitive

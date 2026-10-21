@@ -132,8 +132,14 @@ export class Lexer {
         continue;
       }
 
-      // Single-character operators and delimiters
-      if (['+', '-', '*', '/', '\\', '^', '<', '>', '=', '~', '&', '|', ':'].includes(ch)) {
+      // Single-character operators and delimiters.
+      // `@` starts an anonymous function (`@(x) x + 1`) or a named function
+      // handle (`@sin`). It must never be dropped silently: an ignored `@`
+      // turns `@(x) x + 1` into the *parenthesised variable* `x + 1`, which
+      // is a wrong answer rather than an error.
+      if (
+        ['+', '-', '*', '/', '\\', '^', '<', '>', '=', '~', '&', '|', ':', '@'].includes(ch)
+      ) {
         this.addToken('OPERATOR', ch);
         this.advance();
         continue;

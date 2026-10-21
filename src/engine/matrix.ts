@@ -662,6 +662,19 @@ export class Matrix {
     return res;
   }
 
+  /**
+   * Return this matrix as a *logical* matrix: every non-zero entry becomes
+   * 1, every zero becomes 0, and the result reports `class` as `'logical'`.
+   *
+   * MATLAB's comparison and logical operators produce logical arrays, not
+   * double arrays, so `class(A == B)` must be `'logical'`.
+   */
+  asLogical(): Matrix {
+    const out = this.map(x => (x === 0 ? 0 : 1));
+    out.isLogical = true;
+    return out;
+  }
+
   map(fn: (val: number, r: number, c: number) => number): Matrix {
     const res = Matrix.zeros(this.rows, this.cols);
     for (let r = 0; r < this.rows; r++) {

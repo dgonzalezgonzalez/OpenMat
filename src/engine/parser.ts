@@ -353,6 +353,42 @@ export class Parser {
       return { type: 'StringLiteral', value: this.previous().value };
     }
 
+    // An anonymous function `@(x) body` or a named handle `@sin`.
+    if (this.matchOperator('@')) {
+      if (this.matchDelimiter('(')) {
+        const params: string[] = [];
+        if (!this.checkDelimiter(')')) {
+          do {
+            params.push(
+              this.consumeTokenType(
+                'IDENTIFIER',
+                'Expected a parameter name in an anonymous function'
+              ).value
+            );
+          } while (this.matchDelimiter(','));
+        }
+        this.consumeDelimiter(
+          ')',
+          "Expected ')' after the parameter list of an anonymous function"
+        );
+        // The body is a single expression, as in MATLAB.
+        const body = this.parseExpression();
+        return { type: 'AnonymousFunction', params, body };
+      }
+
+      // A named handle: `@sin`, `@myLocalFunction`.
+      const named = this.consumeTokenType(
+        'IDENTIFIER',
+        "Expected a function name after '@'"
+      ).value;
+      return {
+        type: 'AnonymousFunction',
+        params: [],
+        body: { type: 'Identifier', name: named },
+        namedTarget: named
+      };
+    }
+
     if (this.matchTokenType('IDENTIFIER')) {
       return { type: 'Identifier', name: this.previous().value };
     }

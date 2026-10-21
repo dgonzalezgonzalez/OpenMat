@@ -27,7 +27,10 @@ import {
   ReturnStatementNode,
   CommandNode,
   ExecutionResult,
-  PlotData
+  PlotData,
+  AnonymousFunctionNode,
+  FunctionHandle,
+  isFunctionHandle
 } from './types';
 
 /**
@@ -331,6 +334,9 @@ export class Interpreter {
       case 'FunctionCall':
       case 'IndexExpr':
         return this.evaluateCallOrIndex(node);
+
+      case 'AnonymousFunction':
+        return this.makeFunctionHandle(node);
 
       case 'FieldExpr':
         return this.evaluateFieldExpr(node);
@@ -814,29 +820,31 @@ export class Interpreter {
       case '^':
         if (rm.isScalar()) return lm.dotPow(rm.getScalar());
         throw new Error('Matrix power ^ requires scalar exponent');
-      case '==': return lm.elementWise(rm, (a, b) => a === b ? 1 : 0);
-      case '~=': return lm.elementWise(rm, (a, b) => a !== b ? 1 : 0);
-      case '<': return lm.elementWise(rm, (a, b) => a < b ? 1 : 0);
-      case '<=': return lm.elementWise(rm, (a, b) => a <= b ? 1 : 0);
-      case '>': return lm.elementWise(rm, (a, b) => a > b ? 1 : 0);
-      case '>=': return lm.elementWise(rm, (a, b) => a >= b ? 1 : 0);
+      // MATLAB's comparison operators return a *logical* array, not a double
+      // one: `class([1 2] == [1 3])` is 'logical'.
+      case '==': return lm.elementWise(rm, (a, b) => a === b ? 1 : 0).asLogical();
+      case '~=': return lm.elementWise(rm, (a, b) => a !== b ? 1 : 0).asLogical();
+      case '<': return lm.elementWise(rm, (a, b) => a < b ? 1 : 0).asLogical();
+      case '<=': return lm.elementWise(rm, (a, b) => a <= b ? 1 : 0).asLogical();
+      case '>': return lm.elementWise(rm, (a, b) => a > b ? 1 : 0).asLogical();
+      case '>=': return lm.elementWise(rm, (a, b) => a >= b ? 1 : 0).asLogical();
       case '&':
-        return lm.elementWise(rm, (a, b) => (a !== 0 && b !== 0) ? 1 : 0);
+        return lm.elementWise(rm, (a, b) => (a !== 0 && b !== 0) ? 1 : 0).asLogical();
       case '|':
-        return lm.elementWise(rm, (a, b) => (a !== 0 || b !== 0) ? 1 : 0);
+        return lm.elementWise(rm, (a, b) => (a !== 0 || b !== 0) ? 1 : 0).asLogical();
       case '&&':
         // MATLAB's short-circuit operators only accept scalar operands.
         this.requireScalar(lm, '&&');
         this.requireScalar(rm, '&&');
         return Matrix.scalar(
           lm.getScalar() !== 0 && rm.getScalar() !== 0 ? 1 : 0
-        );
+        ).asLogical();
       case '||':
         this.requireScalar(lm, '||');
         this.requireScalar(rm, '||');
         return Matrix.scalar(
           lm.getScalar() !== 0 || rm.getScalar() !== 0 ? 1 : 0
-        );
+        ).asLogical();
       default:
         throw new Error(`Unsupported binary operator: ${operator}`);
     }
@@ -858,18 +866,15 @@ export class Interpreter {
    * Implemented as the element-wise inverse of A times B, matching MATLAB.
    */
   private dotLeftDiv(a: Matrix, b: Matrix): Matrix {
-    if (a.isScalar() && b.isScalar()) {
-      const av = a.getScalar();
-      if (av === 0) throw new Error('Matrix division by zero.');
-      return Matrix.scalar(av / b.getScalar());
-    }
-    // Reuse the element-wise engine with swapped operands where possible:
-    // a .\ b == b ./ a only for scalars, so compute 1./a then .* b.
-    const inv = a.map(x => {
-      if (x === 0) throw new Error('Matrix division by zero.');
-      return 1 / x;
+    // MATLAB's rule for a zero divisor is `0 .\ 0 = NaN` and `0 .\ y = ±Inf`;
+    // it does not raise an error the way matrix division by zero does.
+    return a.elementWise(b, (x, y) => {
+      if (x === 0) {
+        if (y === 0) return NaN;
+        return y > 0 ? Infinity : -Infinity;
+      }
+      return y / x;
     });
-    return inv.dotMul(b);
   }
 
   private evaluateUnaryOp(node: UnaryOpNode): any {
@@ -889,7 +894,7 @@ export class Interpreter {
     switch (operator) {
       case '-': return m.neg();
       case '+': return m;
-      case '~': return m.map(x => (x === 0 ? 1 : 0));
+      case '~': return m.map(x => (x === 0 ? 1 : 0)).asLogical();
       case '\'':
       case '.\'': return m.transpose();
       default:
@@ -901,6 +906,16 @@ export class Interpreter {
     const calleeName = node.type === 'FunctionCall'
       ? node.callee
       : (node.target as any).name;
+
+    // A function handle stored in the workspace: `f(2)` calls the handle
+    // rather than indexing a matrix.
+    if (calleeName in this.workspace && isFunctionHandle(this.workspace[calleeName])) {
+      const rawHandleArgs = node.type === 'FunctionCall' ? node.args : node.indices;
+      const handleArgs = rawHandleArgs.map(a =>
+        a === 'colon' ? 'colon' : this.evaluate(a)
+      );
+      return this.callFunctionHandle(this.workspace[calleeName], handleArgs);
+    }
 
     // Check if callee is a matrix in workspace (indexing)
     if (calleeName in this.workspace && this.workspace[calleeName] instanceof Matrix) {
@@ -1005,7 +1020,328 @@ export class Interpreter {
     return val instanceof Matrix ? val.getScalar() : Number(val);
   }
 
+  /**
+   * Build the runtime value of an anonymous function.
+   *
+   * MATLAB captures the workspace at the moment the handle is created, so
+   * the closure is a snapshot — later changes to the captured variables are
+   * not visible through the handle.
+   */
+  private makeFunctionHandle(node: AnonymousFunctionNode): FunctionHandle {
+    const text = node.namedTarget
+      ? `@${node.namedTarget}`
+      : `@(${node.params.join(',')})${formatExpression(node.body)}`;
+    return {
+      kind: 'function_handle',
+      params: node.params,
+      body: node.body,
+      namedTarget: node.namedTarget,
+      closure: { ...this.workspace },
+      text
+    };
+  }
+
+  /**
+   * Call a function handle.
+   *
+   * The body is evaluated in a sub-interpreter whose workspace is the
+   * captured closure plus the bound parameters, so that the body sees the
+   * parameters and the captured variables but not the caller's later state.
+   */
+  private callFunctionHandle(handle: FunctionHandle, args: any[]): any {
+    if (handle.namedTarget) {
+      return this.callFunction(handle.namedTarget, args);
+    }
+
+    const scope: Record<string, any> = { ...handle.closure };
+    handle.params.forEach((param, i) => {
+      scope[param] = args[i] ?? Matrix.scalar(0);
+    });
+
+    const sub = new Interpreter(scope);
+    sub.functions = this.functions;
+    sub.outputSink = this.outputSink ?? this.outputs;
+    sub.plotSink = this.plotSink ?? this.plots;
+    sub.parent = this;
+    sub.currentPlot = this.currentPlot;
+    sub.holdOn = this.holdOn;
+    sub.timerStart = this.timerStart;
+    sub.currentNargin = args.length;
+    sub.currentFunctionNargout = 1;
+    // The generator is session-wide in MATLAB, so the handle draws from the
+    // same stream as its creator.
+    sub.setRng(this.rng);
+
+    return sub.evaluate(handle.body);
+  }
+
+  /**
+   * Apply a function handle element-wise with singleton expansion.
+   *
+   * This is `bsxfun`: the output shape is the element-wise maximum of the
+   * input shapes, and every input must be either a singleton along a
+   * dimension or match the output exactly.
+   */
+  private callBsxfun(fn: FunctionHandle, arrays: any[]): any {
+    if (arrays.length === 0) {
+      throw new Error('bsxfun requires at least one array.');
+    }
+    const mats = arrays.map(a =>
+      a instanceof Matrix ? a : Matrix.scalar(Number(a))
+    );
+
+    let rows = 1;
+    let cols = 1;
+    for (const m of mats) {
+      rows = Math.max(rows, m.rows);
+      cols = Math.max(cols, m.cols);
+    }
+    for (const m of mats) {
+      if ((m.rows !== 1 && m.rows !== rows) || (m.cols !== 1 && m.cols !== cols)) {
+        throw new Error(
+          'Dimensions of arrays being concatenated are not consistent.'
+        );
+      }
+    }
+
+    const out = Matrix.zeros(rows, cols);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const values = mats.map(m =>
+          m.get(m.rows === 1 ? 1 : r + 1, m.cols === 1 ? 1 : c + 1)
+        );
+        const result = this.callFunctionHandle(fn, values);
+        out.data[r][c] =
+          result instanceof Matrix ? result.getScalar() : Number(result);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * `arrayfun(fun, A)` — apply a function handle to every element of `A`.
+   *
+   * The result has the same size as `A`. MATLAB's `'UniformOutput', false`
+   * variant returns a cell array, which the engine does not have yet.
+   */
+  private callArrayfun(fn: FunctionHandle, args: any[]): any {
+    const a = args[0];
+    if (!(a instanceof Matrix)) {
+      throw new Error('arrayfun requires an array as its second argument.');
+    }
+    if (args.length > 1 && args[1] === 'UniformOutput') {
+      throw new Error(
+        "arrayfun's 'UniformOutput', false mode returns a cell array, which is not supported yet."
+      );
+    }
+    const out = Matrix.zeros(a.rows, a.cols);
+    for (let r = 0; r < a.rows; r++) {
+      for (let c = 0; c < a.cols; c++) {
+        const result = this.callFunctionHandle(fn, [a.get(r + 1, c + 1)]);
+        out.data[r][c] =
+          result instanceof Matrix ? result.getScalar() : Number(result);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * `structfun(fun, s)` — apply a function handle to every field of a
+   * scalar struct. The result is a 1-by-n row vector, as in MATLAB.
+   */
+  private callStructfun(fn: FunctionHandle, args: any[]): any {
+    const s = args[0];
+    if (!s || typeof s !== 'object' || Array.isArray(s) || s instanceof Matrix) {
+      throw new Error('structfun requires a scalar structure as its second argument.');
+    }
+    const keys = Object.keys(s);
+    // MATLAB returns a column vector, one entry per field.
+    const out = Matrix.zeros(keys.length, 1);
+    keys.forEach((key, i) => {
+      const result = this.callFunctionHandle(fn, [s[key]]);
+      out.data[i][0] =
+        result instanceof Matrix ? result.getScalar() : Number(result);
+    });
+    return out;
+  }
+
+  /**
+   * `fzero(fun, [a b])` — find a root of `fun` in the bracket `[a, b]`.
+   *
+   * MATLAB's `fzero` is a combination of bisection, secant and inverse
+   * quadratic interpolation; the engine uses Brent's method, which converges
+   * to the same root and therefore agrees with MATLAB to well inside the
+   * parity comparator's tolerance.
+   */
+  private callFzero(fn: FunctionHandle, args: any[]): any {
+    const f = (x: number): number => {
+      const result = this.callFunctionHandle(fn, [x]);
+      return result instanceof Matrix ? result.getScalar() : Number(result);
+    };
+
+    if (args.length === 0) {
+      throw new Error('fzero requires an initial interval.');
+    }
+
+    // A single starting point: MATLAB searches outwards from it.
+    const start = args[0] instanceof Matrix ? (args[0] as Matrix).toFlatArray() : [Number(args[0])];
+    if (start.length === 1) {
+      const x0 = start[0];
+      const fx0 = f(x0);
+      if (fx0 === 0) return Matrix.scalar(x0);
+      let lo = x0;
+      let hi = x0;
+      let flo = fx0;
+      let fhi = fx0;
+      for (let step = 1; step <= 60; step++) {
+        const delta = Math.abs(x0) * Math.pow(2, step - 1);
+        for (const sign of [1, -1]) {
+          const probe = x0 + sign * delta;
+          const fprobe = f(probe);
+          if (fprobe === 0) return Matrix.scalar(probe);
+          if (fprobe * fx0 < 0) {
+            lo = sign > 0 ? x0 : probe;
+            hi = sign > 0 ? probe : x0;
+            flo = sign > 0 ? fx0 : fprobe;
+            fhi = sign > 0 ? fprobe : fx0;
+            return this.brentRoot(f, lo, hi, flo, fhi);
+          }
+        }
+      }
+      throw new Error('fzero could not find a sign change in the search interval.');
+    }
+
+    const values = start;
+    if (values.length !== 2) {
+      throw new Error('fzero requires a scalar starting point or a two-element interval.');
+    }
+    const [a, b] = values;
+    const fa = f(a);
+    const fb = f(b);
+    if (fa === 0) return Matrix.scalar(a);
+    if (fb === 0) return Matrix.scalar(b);
+    if (fa * fb > 0) {
+      throw new Error(
+        'fzero: the interval must contain a sign change. Try a different interval.'
+      );
+    }
+    return this.brentRoot(f, a, b, fa, fb);
+  }
+
+  /**
+   * Brent's method for a bracketed root.
+   */
+  private brentRoot(
+    f: (x: number) => number,
+    a: number,
+    b: number,
+    fa: number,
+    fb: number
+  ): Matrix {
+    let lo = a;
+    let hi = b;
+    let flo = fa;
+    let fhi = fb;
+    let c = a;
+    let fc = fa;
+    let d = b - a;
+    let e = d;
+
+    for (let iter = 0; iter < 200; iter++) {
+      if (flo * fhi < 0) {
+        c = lo;
+        fc = flo;
+        d = hi - lo;
+        e = d;
+      }
+      if (Math.abs(fc) < Math.abs(flo)) {
+        hi = lo;
+        fhi = flo;
+        lo = c;
+        flo = fc;
+        c = hi;
+        fc = fhi;
+      }
+      const tol = 2 * Number.EPSILON * Math.abs(lo) + 1e-15;
+      const m = 0.5 * (hi - lo);
+      if (Math.abs(m) <= tol || fc === 0) {
+        return Matrix.scalar(lo);
+      }
+      if (Math.abs(e) < tol || Math.abs(fhi) <= Math.abs(flo)) {
+        // Linear interpolation (secant step).
+        e = m;
+        d = m;
+      } else {
+        // Inverse quadratic interpolation.
+        const p = 2 * m * flo * fhi;
+        const q = flo * flo - fhi * fhi;
+        const r = q / (2 * p);
+        if (Math.abs(r) < 1 && Math.abs(r) < Math.abs(e) / 2) {
+          e = d;
+          d = r;
+        } else {
+          e = m;
+          d = m;
+        }
+      }
+      const next = lo + (Math.abs(d) > tol ? d : m > 0 ? tol : -tol);
+      const fnext = f(next);
+      if (fnext === 0) return Matrix.scalar(next);
+      if (fnext * flo < 0) {
+        hi = lo;
+        fhi = flo;
+      } else {
+        c = hi;
+        fc = fhi;
+      }
+      lo = next;
+      flo = fnext;
+    }
+    return Matrix.scalar(lo);
+  }
+
   private callFunction(name: string, args: any[]): any {
+    // `feval` and `bsxfun` are the only builtins that need the interpreter's
+    // own call machinery, because their first argument is a function handle.
+    if (name === 'feval') {
+      const [target, ...rest] = args;
+      if (isFunctionHandle(target)) return this.callFunctionHandle(target, rest);
+      if (typeof target === 'string') return this.callFunction(target, rest);
+      throw new Error('feval requires a function handle or a function name.');
+    }
+
+    if (name === 'bsxfun') {
+      const [target, ...arrays] = args;
+      if (!isFunctionHandle(target)) {
+        throw new Error('bsxfun requires a function handle as its first argument.');
+      }
+      return this.callBsxfun(target, arrays);
+    }
+
+    if (name === 'arrayfun') {
+      const [target, ...rest] = args;
+      if (!isFunctionHandle(target)) {
+        throw new Error('arrayfun requires a function handle as its first argument.');
+      }
+      return this.callArrayfun(target, rest);
+    }
+
+    if (name === 'structfun') {
+      const [target, ...rest] = args;
+      if (!isFunctionHandle(target)) {
+        throw new Error('structfun requires a function handle as its first argument.');
+      }
+      return this.callStructfun(target, rest);
+    }
+
+    if (name === 'fzero') {
+      const [target, ...rest] = args;
+      if (!isFunctionHandle(target)) {
+        throw new Error('fzero requires a function handle as its first argument.');
+      }
+      return this.callFzero(target, rest);
+    }
+
     if (name in BUILTINS) {
       const ctx: BuiltinContext = {
         workspace: this.workspace,
@@ -1251,6 +1587,69 @@ function formatScalar(m: Matrix): string {
   if (!m.isScalar()) return m.format();
   const v = m.getScalar();
   if (Number.isInteger(v)) return String(v);
+  return String(v);
+}
+
+/**
+ * Render an expression as MATLAB source, without spaces around operators.
+ *
+ * This is what MATLAB prints for a function handle: `f = @(x) x + 1` is
+ * displayed as `@(x)x+1`. The text is only used for display, so a node type
+ * the printer does not know falls back to a readable placeholder instead of
+ * throwing.
+ */
+function formatExpression(node: ASTNode): string {
+  switch (node.type) {
+    case 'NumberLiteral':
+      return formatNumberLiteral(node.value);
+
+    case 'StringLiteral':
+      return `'${node.value}'`;
+
+    case 'Identifier':
+      return node.name;
+
+    case 'BinaryOp':
+      return `${formatExpression(node.left)}${node.operator}${formatExpression(node.right)}`;
+
+    case 'UnaryOp':
+      if (node.isPostfix) return `${formatExpression(node.operand)}${node.operator}`;
+      return `${node.operator}${formatExpression(node.operand)}`;
+
+    case 'MatrixLiteral':
+      return `[${node.rows
+        .map((row) => row.map(formatExpression).join(' '))
+        .join('; ')}]`;
+
+    case 'RangeExpr':
+      return node.step
+        ? `${formatExpression(node.start)}:${formatExpression(node.step)}:${formatExpression(node.end)}`
+        : `${formatExpression(node.start)}:${formatExpression(node.end)}`;
+
+    case 'IndexExpr':
+      return `${formatExpression(node.target)}(${node.indices
+        .map((i) => (i === 'colon' ? ':' : formatExpression(i)))
+        .join(',')})`;
+
+    case 'FieldExpr':
+      return `${formatExpression(node.target)}.${node.field}`;
+
+    case 'FunctionCall':
+      return `${node.callee}(${node.args.map(formatExpression).join(',')})`;
+
+    case 'AnonymousFunction':
+      return node.namedTarget
+        ? `@${node.namedTarget}`
+        : `@(${node.params.join(',')})${formatExpression(node.body)}`;
+
+    default:
+      return '<expression>';
+  }
+}
+
+/** Render a number the way MATLAB writes it in source code. */
+function formatNumberLiteral(v: number): string {
+  if (Number.isInteger(v) && Math.abs(v) < 1e15) return String(v);
   return String(v);
 }
 

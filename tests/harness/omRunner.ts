@@ -14,6 +14,7 @@ import * as path from 'node:path';
 import { Interpreter } from '../../src/engine/interpreter';
 import { Matrix } from '../../src/engine/matrix';
 import { MatlabRng } from '../../src/engine/rng';
+import { isFunctionHandle } from '../../src/engine/types';
 
 export interface BlockReport {
   name: string;
@@ -144,7 +145,22 @@ export function serializeWorkspace(ws: Record<string, any>): Record<string, unkn
       // its runner serializes it as `kind: 'other'` with the flattened data.
       out[k] = { kind: 'other', value: 'logical', data: [v ? 1 : 0] };
     } else if (typeof v === 'number') {
-      out[k] = { kind: 'other', value: typeof v };
+      // A bare JavaScript number is a 1x1 double in MATLAB, so it has to be
+      // serialized as a 1x1 matrix. The previous form
+      // (`{kind:'other', value:'number'}`) threw the *value* away, so the
+      // comparator could not compare it against MATLAB's matrix and the
+      // difference was silently ignored.
+      out[k] = {
+        kind: 'matrix',
+        rows: 1,
+        cols: 1,
+        data: v,
+        text: String(v)
+      };
+    } else if (isFunctionHandle(v)) {
+      // A function handle: MATLAB's `class()` reports `function_handle`, and
+      // its runner serializes it the same way.
+      out[k] = { kind: 'other', value: 'function_handle' };
     } else if (v && typeof v === 'object' && 'message' in v && 'identifier' in v) {
       // A caught error bound by `catch err`: MATLAB's MException equivalent.
       out[k] = { kind: 'other', value: 'MException' };

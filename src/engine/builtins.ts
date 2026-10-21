@@ -4,6 +4,7 @@ import { num2strMatrix, num2strWithFormat } from './numstr';
 import { hypot as fdlibmHypot } from './fdlibm';
 import { extendedNorm2 } from './ext80';
 import { PlotData } from './types';
+import { isFunctionHandle, makeNamedFunctionHandle } from './types';
 
 export type BuiltinFn = (args: any[], context: BuiltinContext) => any;
 
@@ -76,6 +77,108 @@ export const BUILTINS: Record<string, BuiltinFn> = {
     const r = toNum(args[0], 1);
     const c = args.length > 1 ? toNum(args[1], r) : r;
     return Matrix.randn(r, c, ctx.rng);
+  },
+
+  /**
+   * `randi(imax)` / `randi([imin imax])` — random integers.
+   *
+   * MATLAB's `randi` draws one uniform per element from the *same* stream
+   * that `rand` uses and maps it with
+   *
+   *     value = imin + floor(u * (imax - imin + 1))
+   *
+   * which is exactly what `randstream::randiFcn` does (MATLAB R2025b,
+   * `libmwmathrng.dylib` at `0x384b0`; REA/Kuna evidence
+   * `ev_6fb1520901584b14f620e46251702460fe7b0744fb389ead4319e5c690cf153c`).
+   * The scalar form `randi(imax)` is the range form with `imin = 1`.
+   *
+   * The result is filled column-major, like every other MATLAB array.
+   */
+  randi: (args, ctx) => {
+    const spec = toMatrix(args[0]);
+    let imin = 1;
+    let imax: number;
+    if (spec.isScalar()) {
+      imax = spec.getScalar();
+    } else if (spec.rows * spec.cols === 2) {
+      const bounds = spec.toFlatArray();
+      imin = bounds[0];
+      imax = bounds[1];
+    } else {
+      throw new Error(RANDI_LIMITS);
+    }
+    if (
+      !Number.isInteger(imax) ||
+      imax < 1 ||
+      !Number.isInteger(imin) ||
+      imin > imax
+    ) {
+      throw new Error(RANDI_LIMITS);
+    }
+    const [rows, cols] = parseRandSize(args.slice(1));
+    const range = imax - imin + 1;
+    const out = Matrix.zeros(rows, cols);
+    for (let c = 0; c < cols; c++) {
+      for (let r = 0; r < rows; r++) {
+        out.data[r][c] = imin + Math.floor(ctx.rng.nextDouble() * range);
+      }
+    }
+    return out;
+  },
+
+  /**
+   * `randperm(n)` / `randperm(n,k)` — a random permutation.
+   *
+   * MATLAB uses **two different algorithms** here, and they do not agree:
+   *
+   * - `randperm(n)` draws `n` uniforms from the same stream as `rand`, sorts
+   *   them and returns the *indices* in ascending order of value
+   *   (`randstream::randpermFcn` in `libmwmathrng.dylib` at `0x3a1b0`; REA/Kuna
+   *   evidence `ev_a017d8521be49df42df9cc7e6de07057c359d6c30df7ae5849e8a15578172da3`).
+   *   The sort is stable, so equal uniforms keep their original order.
+   * - `randperm(n,k)` is `randstream::randkpermFcn` (`0x3a330`; REA/Kuna
+   *   evidence `ev_62082289e7108ea1fd8898f2d36cb363594aa83892de1b0e340e503bc34f07e3`),
+   *   which picks `k` of `n` with a completely different scheme — and it
+   *   consumes a different number of uniforms, so the two forms leave the
+   *   random stream in different places.
+   *
+   * See {@link randKPerm} for the three sub-algorithms MATLAB switches between.
+   */
+  randperm: (args, ctx) => {
+    const n = toMatrix(args[0]);
+    if (!n.isScalar()) {
+      throw new Error('randperm requires a scalar size.');
+    }
+    const count = n.getScalar();
+    if (!Number.isInteger(count) || count < 0) {
+      throw new Error('randperm requires a non-negative integer size.');
+    }
+    if (args.length > 1) {
+      const kMat = toMatrix(args[1]);
+      if (!kMat.isScalar()) {
+        throw new Error('randperm requires a scalar K.');
+      }
+      const k = kMat.getScalar();
+      if (!Number.isInteger(k) || k < 0) {
+        throw new Error('randperm requires a non-negative integer K.');
+      }
+      if (k > count) {
+        throw new Error('K must be less than or equal to N.');
+      }
+      return randKPerm(count, k, ctx.rng);
+    }
+    const uniforms: number[] = [];
+    for (let i = 0; i < count; i++) {
+      uniforms.push(ctx.rng.nextDouble());
+    }
+    const order = uniforms.map((_, i) => i);
+    // A stable sort, so equal uniforms keep their original order.
+    order.sort((a, b) => uniforms[a] - uniforms[b]);
+    const out = Matrix.zeros(1, count);
+    for (let i = 0; i < count; i++) {
+      out.data[0][i] = order[i] + 1;
+    }
+    return out;
   },
 
   /**
@@ -169,10 +272,10 @@ export const BUILTINS: Record<string, BuiltinFn> = {
 
   isempty: (args) => {
     if (typeof args[0] === 'string') {
-      return Matrix.scalar(args[0].length === 0 ? 1 : 0);
+      return Matrix.scalar(args[0].length === 0 ? 1 : 0).asLogical();
     }
     const m = toMatrix(args[0]);
-    return Matrix.scalar(m.rows === 0 || m.cols === 0 ? 1 : 0);
+    return Matrix.scalar(m.rows === 0 || m.cols === 0 ? 1 : 0).asLogical();
   },
 
   reshape: (args) => {
@@ -469,14 +572,14 @@ export const BUILTINS: Record<string, BuiltinFn> = {
     const m = toMatrix(args[0]);
     // Without a dimension MATLAB reduces over the first non-singleton
     // dimension, so a 2x3 matrix yields a 1x3 row.
-    if (args.length > 1) return m.anyDim(toNum(args[1]));
-    return m.anyDim(m.rows === 1 ? 2 : 1);
+    if (args.length > 1) return m.anyDim(toNum(args[1])).asLogical();
+    return m.anyDim(m.rows === 1 ? 2 : 1).asLogical();
   },
 
   all: (args) => {
     const m = toMatrix(args[0]);
-    if (args.length > 1) return m.allDim(toNum(args[1]));
-    return m.allDim(m.rows === 1 ? 2 : 1);
+    if (args.length > 1) return m.allDim(toNum(args[1])).asLogical();
+    return m.allDim(m.rows === 1 ? 2 : 1).asLogical();
   },
 
   /**
@@ -807,6 +910,273 @@ export const BUILTINS: Record<string, BuiltinFn> = {
   power: (args) => toMatrix(args[0]).elementWise(toMatrix(args[1]), (a, b) => Math.pow(a, b)),
   nthroot: (args) => toMatrix(args[0]).elementWise(toMatrix(args[1]), (a, b) => Math.pow(a, 1 / b)),
 
+  // -----------------------------------------------------------------------
+  // The ufunc family: MATLAB's own names for the arithmetic and logical
+  // operators. The naming is the opposite of what it looks like — the
+  // *unprefixed* name is the element-wise form and the `m`-prefixed name is
+  // the matrix form:
+  //
+  //   times(A,B)  == A .* B      mtimes(A,B)  == A * B
+  //   power(A,B)  == A .^ B      mpower(A,B)  == A ^ B
+  //   rdivide(A,B)== A ./ B      mrdivide(A,B)== A / B
+  //   ldivide(A,B)== A .\ B      mldivide(A,B)== A \ B
+  //
+  // MATLAB says so itself: "Incorrect dimensions for matrix multiplication.
+  // To operate on each element of the matrix individually, use TIMES (.*)".
+  // -----------------------------------------------------------------------
+  plus: (args) => toMatrix(args[0]).add(toMatrix(args[1])),
+  minus: (args) => toMatrix(args[0]).sub(toMatrix(args[1])),
+  times: (args) => toMatrix(args[0]).dotMul(toMatrix(args[1])),
+  mtimes: (args) => toMatrix(args[0]).mul(toMatrix(args[1])),
+  rdivide: (args) => toMatrix(args[0]).dotDiv(toMatrix(args[1])),
+  mrdivide: (args) => toMatrix(args[0]).mldivide(toMatrix(args[1])),
+  ldivide: (args) => dotLeftDivide(toMatrix(args[0]), toMatrix(args[1])),
+  mldivide: (args) => toMatrix(args[0]).ldivide(toMatrix(args[1])),
+  mpower: (args) => {
+    const a = toMatrix(args[0]);
+    const b = toMatrix(args[1]);
+    if (!b.isScalar()) {
+      throw new Error(
+        'Incorrect dimensions for raising a matrix to a power. To operate on each element of the matrix individually, use POWER (.^) for elementwise power.'
+      );
+    }
+    return a.dotPow(b.getScalar());
+  },
+
+  /**
+   * The comparison functions. Like MATLAB's comparison *operators*, they
+   * return logical arrays.
+   */
+  eq: (args) => toMatrix(args[0]).elementWise(toMatrix(args[1]), (a, b) => (a === b ? 1 : 0)).asLogical(),
+  ne: (args) => toMatrix(args[0]).elementWise(toMatrix(args[1]), (a, b) => (a !== b ? 1 : 0)).asLogical(),
+  lt: (args) => toMatrix(args[0]).elementWise(toMatrix(args[1]), (a, b) => (a < b ? 1 : 0)).asLogical(),
+  le: (args) => toMatrix(args[0]).elementWise(toMatrix(args[1]), (a, b) => (a <= b ? 1 : 0)).asLogical(),
+  gt: (args) => toMatrix(args[0]).elementWise(toMatrix(args[1]), (a, b) => (a > b ? 1 : 0)).asLogical(),
+  ge: (args) => toMatrix(args[0]).elementWise(toMatrix(args[1]), (a, b) => (a >= b ? 1 : 0)).asLogical(),
+
+  /** The logical functions. MATLAB returns logical arrays from all of them. */
+  and: (args) => toMatrix(args[0]).elementWise(toMatrix(args[1]), (a, b) => (a !== 0 && b !== 0 ? 1 : 0)).asLogical(),
+  or: (args) => toMatrix(args[0]).elementWise(toMatrix(args[1]), (a, b) => (a !== 0 || b !== 0 ? 1 : 0)).asLogical(),
+  xor: (args) => toMatrix(args[0]).elementWise(toMatrix(args[1]), (a, b) => ((a !== 0) !== (b !== 0) ? 1 : 0)).asLogical(),
+  not: (args) => toMatrix(args[0]).map(x => (x === 0 ? 1 : 0)).asLogical(),
+  uminus: (args) => toMatrix(args[0]).neg(),
+  uplus: (args) => toMatrix(args[0]),
+
+  /**
+   * `str2func(name)` — a function handle for a named function.
+   *
+   * MATLAB's `str2func('sin')` has `class` `'function_handle'`; calling the
+   * handle dispatches to the named function.
+   */
+  str2func: (args) => {
+    const name = args[0];
+    if (typeof name !== 'string' || name.length === 0) {
+      throw new Error('str2func requires a non-empty function name.');
+    }
+    return makeNamedFunctionHandle(name);
+  },
+
+  // -----------------------------------------------------------------------
+  // Convolution and filtering.
+  // -----------------------------------------------------------------------
+
+  /**
+   * `conv(a, b)` — the full discrete convolution.
+   *
+   * For vectors the result has `length(a) + length(b) - 1` entries and
+   * `c(n+1) = sum_k a(k+1) * b(n-k+1)`, which is MATLAB's definition.
+   * For matrices this is the two-dimensional full convolution.
+   */
+  conv: (args) => {
+    const a = toMatrix(args[0]);
+    const b = toMatrix(args[1]);
+    if (a.rows === 1 || a.cols === 1) {
+      if (b.rows === 1 || b.cols === 1) {
+        return convolve1d(a.toFlatArray(), b.toFlatArray());
+      }
+    }
+    if (a.rows > 1 && a.cols > 1 && b.rows > 1 && b.cols > 1) {
+      return convolve2d(a, b);
+    }
+    throw new Error('conv requires two vectors or two matrices of the same kind.');
+  },
+
+  /**
+   * `deconv(b, a)` — polynomial division: the quotient and the remainder.
+   *
+   * MATLAB returns two outputs, so the builtin returns a two-element array,
+   * which the interpreter binds through `lastCallOutputs`.
+   */
+  deconv: (args) => {
+    const b = toMatrix(args[0]).toFlatArray();
+    const a = toMatrix(args[1]).toFlatArray();
+    if (a.length === 0) throw new Error('deconv requires a non-empty divisor.');
+    if (a.length > b.length) {
+      throw new Error('deconv requires the divisor to be no longer than the dividend.');
+    }
+    const quotient = new Array(b.length).fill(0);
+    const remainder = b.slice();
+    for (let i = 0; i <= b.length - a.length; i++) {
+      const factor = remainder[i] / a[0];
+      quotient[i] = factor;
+      for (let j = 0; j < a.length; j++) remainder[i + j] -= factor * a[j];
+    }
+    // MATLAB returns a quotient of `length(b) - length(a) + 1` entries and a
+    // remainder that keeps the length of the dividend.
+    const q = quotient.slice(0, b.length - a.length + 1);
+    return [Matrix.fromArray([q]), Matrix.fromArray([remainder])];
+  },
+
+  /**
+   * `filter(b, a, x)` — the causal linear filter.
+   *
+   * MATLAB normalises by `a(1)`, so `filter([1], [2], x)` is the same as
+   * `filter([0.5], [1], x)`.
+   */
+  filter: (args) => {
+    const b = toMatrix(args[0]).toFlatArray();
+    const a = toMatrix(args[1]).toFlatArray();
+    const x = toMatrix(args[2]).toFlatArray();
+    if (a.length === 0) throw new Error('filter requires a non-empty denominator.');
+    const a0 = a[0];
+    if (a0 === 0) throw new Error('filter: denominator must not start with zero.');
+    const bn = b.map(v => v / a0);
+    const an = a.map(v => v / a0);
+    const y = new Array(x.length).fill(0);
+    for (let n = 0; n < x.length; n++) {
+      let acc = 0;
+      for (let k = 0; k < bn.length; k++) {
+        if (n - k < 0) break;
+        acc += bn[k] * x[n - k];
+      }
+      for (let k = 1; k < an.length; k++) {
+        if (n - k < 0) break;
+        acc -= an[k] * y[n - k];
+      }
+      y[n] = acc;
+    }
+    return Matrix.fromArray([y]);
+  },
+
+  // -----------------------------------------------------------------------
+  // Radix conversion.
+  // -----------------------------------------------------------------------
+
+  /** `dec2bin(n)` — the binary representation of a non-negative integer. */
+  dec2bin: (args) => {
+    const n = toMatrix(args[0]);
+    if (n.rows !== 1 || n.cols !== 1) {
+      throw new Error('dec2bin supports a scalar value.');
+    }
+    const value = n.getScalar();
+    if (!Number.isInteger(value) || value < 0) {
+      throw new Error('dec2bin requires a non-negative integer.');
+    }
+    const width = args.length > 1 ? toNum(args[1], 0) : 0;
+    let text = value.toString(2);
+    if (width > 0) {
+      if (width < text.length) {
+        throw new Error('The number of digits is too large for the value.');
+      }
+      text = text.padStart(width, '0');
+    }
+    return text;
+  },
+
+  /** `bin2dec(s)` — the value of a binary string. */
+  bin2dec: (args) => {
+    const text = args[0];
+    if (typeof text !== 'string' || !/^[01]+$/.test(text)) {
+      throw new Error('bin2dec requires a binary string.');
+    }
+    return Matrix.scalar(parseInt(text, 2));
+  },
+
+  /** `hex2dec(s)` — the value of a hexadecimal string. */
+  hex2dec: (args) => {
+    const text = args[0];
+    if (typeof text !== 'string' || !/^[0-9a-fA-F]+$/.test(text)) {
+      throw new Error('hex2dec requires a hexadecimal string.');
+    }
+    return Matrix.scalar(parseInt(text, 16));
+  },
+
+  /** `dec2hex(n)` — the hexadecimal representation of a non-negative integer. */
+  dec2hex: (args) => {
+    const n = toMatrix(args[0]);
+    if (n.rows !== 1 || n.cols !== 1) {
+      throw new Error('dec2hex supports a scalar value.');
+    }
+    const value = n.getScalar();
+    if (!Number.isInteger(value) || value < 0) {
+      throw new Error('dec2hex requires a non-negative integer.');
+    }
+    let text = value.toString(16).toUpperCase();
+    const width = args.length > 1 ? toNum(args[1], 0) : 0;
+    if (width > 0) {
+      if (width < text.length) {
+        throw new Error('The number of digits is too large for the value.');
+      }
+      text = text.padStart(width, '0');
+    }
+    return text;
+  },
+
+  /**
+   * `interp2(X, Y, V, xq, yq)` — two-dimensional interpolation on a regular
+   * grid.
+   *
+   * `X` holds the grid points along the columns, `Y` the grid points along
+   * the rows and `V` the values, of size `length(Y)` by `length(X)`. The
+   * default method is `linear` (bilinear). The `nearest` method compares the
+   * query against the midpoints between grid points and resolves a tie to
+   * the higher index, exactly as `interp1` does.
+   *
+   * The `interp2(V, XI, YI)` form, where the grid is the matrix indices and
+   * `XI`/`YI` are query matrices, is supported as well.
+   */
+  interp2: (args) => {
+    // Matrix-grid form: interp2(V, XI, YI).
+    if (args.length === 3 && args[0] instanceof Matrix) {
+      const V = args[0] as Matrix;
+      const XI = toMatrix(args[1]);
+      const YI = toMatrix(args[2]);
+      const X = Array.from({ length: V.cols }, (_, i) => i + 1);
+      const Y = Array.from({ length: V.rows }, (_, i) => i + 1);
+      const out = Matrix.zeros(XI.rows, XI.cols);
+      for (let r = 0; r < XI.rows; r++) {
+        for (let c = 0; c < XI.cols; c++) {
+          out.data[r][c] = interpolate2d(
+            X,
+            Y,
+            V,
+            XI.get(r + 1, c + 1),
+            YI.get(r + 1, c + 1),
+            'linear'
+          );
+        }
+      }
+      return out;
+    }
+
+    const X = toMatrix(args[0]).toFlatArray();
+    const Y = toMatrix(args[1]).toFlatArray();
+    const V = toMatrix(args[2]);
+    const xq = toMatrix(args[3]).toFlatArray();
+    const yq = toMatrix(args[4]).toFlatArray();
+    const method = args.length > 5 ? String(args[5]).toLowerCase() : 'linear';
+    if (X.length === 0 || Y.length === 0) {
+      return Matrix.zeros(yq.length, xq.length);
+    }
+    const out = Matrix.zeros(yq.length, xq.length);
+    for (let j = 0; j < yq.length; j++) {
+      for (let i = 0; i < xq.length; i++) {
+        out.data[j][i] = interpolate2d(X, Y, V, xq[i], yq[j], method);
+      }
+    }
+    return out;
+  },
+
   // Strings
   num2str: (args) => {
     const v = args[0];
@@ -892,12 +1262,31 @@ export const BUILTINS: Record<string, BuiltinFn> = {
    * input; OpenMat has no logical type, so a 0/1 double array is the
    * closest faithful representation.
    */
-  isnan: (args) => toMatrix(args[0]).map(v => (Number.isNaN(v) ? 1 : 0)),
-  isinf: (args) => toMatrix(args[0]).map(v => (v === Infinity || v === -Infinity ? 1 : 0)),
+  isnan: (args) => toMatrix(args[0]).map(v => (Number.isNaN(v) ? 1 : 0)).asLogical(),
+  isinf: (args) =>
+    toMatrix(args[0]).map(v => (v === Infinity || v === -Infinity ? 1 : 0)).asLogical(),
   isfinite: (args) =>
-    toMatrix(args[0]).map(v => (Number.isFinite(v) ? 1 : 0)),
-  isreal: (args) => toMatrix(args[0]).map(() => 1),
-  isnumeric: (args) => toMatrix(args[0]).map(() => 1),
+    toMatrix(args[0]).map(v => (Number.isFinite(v) ? 1 : 0)).asLogical(),
+  isreal: (args) => toMatrix(args[0]).map(() => 1).asLogical(),
+  isnumeric: (args) => toMatrix(args[0]).map(() => 1).asLogical(),
+
+  /**
+   * The type predicates MATLAB has but the engine cannot answer truthfully
+   * yet. They are here so that `isinteger(x)` and friends at least report
+   * `false` instead of "unrecognized function"; the ones that would have
+   * to be `true` (`ischar`, `isstring`, `iscell`, `istable`) are handled
+   * separately below.
+   */
+  isinteger: (args) => toMatrix(args[0]).map(() => 0).asLogical(),
+  iscell: (args) =>
+    (Array.isArray(args[0]) ? Matrix.ones(1, 1) : Matrix.zeros(1, 1)).asLogical(),
+  ischar: (args) =>
+    (typeof args[0] === 'string' ? Matrix.ones(1, 1) : Matrix.zeros(1, 1)).asLogical(),
+  isstring: (args) =>
+    (typeof args[0] === 'string' ? Matrix.ones(1, 1) : Matrix.zeros(1, 1)).asLogical(),
+  istable: (args) => Matrix.zeros(1, 1).asLogical(),
+  issparse: (args) => Matrix.zeros(1, 1).asLogical(),
+  isfloat: (args) => toMatrix(args[0]).map(() => 1).asLogical(),
 
   /**
    * `true` / `false` — MATLAB's logical constants.
@@ -1358,6 +1747,7 @@ export const BUILTINS: Record<string, BuiltinFn> = {
     const v = args[0];
     if (typeof v === 'string') return 'char';
     if (typeof v === 'boolean') return 'logical';
+    if (isFunctionHandle(v)) return 'function_handle';
     if (v instanceof Matrix) return v.isLogical ? 'logical' : 'double';
     if (v && typeof v === 'object' && !Array.isArray(v)) return 'struct';
     if (Array.isArray(v)) return 'cell';
@@ -1370,7 +1760,7 @@ export const BUILTINS: Record<string, BuiltinFn> = {
   isstruct: (args) => {
     const v = args[0];
     const ok = v && typeof v === 'object' && !Array.isArray(v) && !(v instanceof Matrix);
-    return Matrix.scalar(ok ? 1 : 0);
+    return Matrix.scalar(ok ? 1 : 0).asLogical();
   },
 
   /**
@@ -1623,6 +2013,13 @@ export const BUILTINS: Record<string, BuiltinFn> = {
     } else if (typeof val === 'boolean') {
       // A logical scalar prints as 1 or 0, not as `true`/`false`.
       ctx.output(Matrix.scalar(val ? 1 : 0).format());
+    } else if (typeof val === 'number') {
+      // A bare number is still a 1x1 double in MATLAB, so it prints with
+      // the same field width as a matrix entry.
+      ctx.output(Matrix.scalar(val).format());
+    } else if (isFunctionHandle(val)) {
+      // MATLAB prints a function handle as its source, e.g. `@(x)x+1`.
+      ctx.output(val.text);
     } else {
       ctx.output(String(val));
     }
@@ -2530,6 +2927,232 @@ function toMatrix(val: any): Matrix {
   if (typeof val === 'number') return Matrix.scalar(val);
   if (Array.isArray(val)) return Matrix.fromArray(val);
   return Matrix.scalar(0);
+}
+
+/**
+ * MATLAB's own error text for a bad `randi` argument.
+ */
+const RANDI_LIMITS =
+  'First input must be a positive scalar integer value IMAX, or two integer values [IMIN IMAX] with IMIN less than or equal to IMAX.';
+
+/**
+ * Read the size arguments of a random-array builtin.
+ *
+ * `randi(10)` is 1x1, `randi(10, 3)` is 3x3, `randi(10, 2, 3)` is 2x3 and
+ * `randi(10, [2 3])` is 2x3, as in MATLAB.
+ */
+function parseRandSize(rest: any[]): [number, number] {
+  if (rest.length === 0) return [1, 1];
+  if (rest.length === 1) {
+    const a = rest[0];
+    if (a instanceof Matrix && a.rows * a.cols === 2) {
+      const flat = a.toFlatArray();
+      return [flat[0], flat[1]];
+    }
+    const m = toNum(a, 1);
+    return [m, m];
+  }
+  return [toNum(rest[0], 1), toNum(rest[1], 1)];
+}
+
+/**
+ * `randperm(n,k)` — pick `k` distinct values from `1:n`, in MATLAB's order.
+ *
+ * MATLAB's `randstream::randkpermFcn` (`libmwmathrng.dylib` at `0x3a330`,
+ * REA/Kuna evidence
+ * `ev_62082289e7108ea1fd8898f2d36cb363594aa83892de1b0e340e503bc34f07e3`)
+ * switches between **three** algorithms, and the choice depends on both `n`
+ * and `k`:
+ *
+ * 1. `k == n` — a Fisher-Yates shuffle of `1:n` that starts at the second
+ *    element (`for i = 2..n: j = trunc(u*i); a[i-1] = a[j]; a[j] = i`).
+ *    It consumes `n - 1` uniforms.
+ * 2. `k < n/4` — a *sparse* partial Fisher-Yates: one uniform per output.
+ *    `i = trunc(m*u)` picks a position in the shrinking range `m = n .. n-k+1`,
+ *    the value at that position is emitted, and the position is swapped with
+ *    the last remaining one. The swap map is sparse, so only the positions
+ *    that actually moved are recorded.
+ * 3. otherwise — the *dense* algorithm: **two** uniforms per output. The
+ *    first uniform drives a walk that computes the value, the second picks
+ *    the slot the value is stored in.
+ *
+ * The floating-point recurrence of the walk is load-bearing: it is a running
+ * probability that has to be evaluated operation for operation as MATLAB
+ * does, so do not "simplify" it into a closed form.
+ */
+function randKPerm(n: number, k: number, rng: MatlabRng): Matrix {
+  const out = Matrix.zeros(1, k);
+  if (k === 0) {
+    return out;
+  }
+  if (k === n) {
+    // 1. Fisher-Yates over 1:n, starting at the second element.
+    const a: number[] = [];
+    for (let i = 1; i <= n; i++) {
+      a.push(i);
+    }
+    for (let i = 2; i <= n; i++) {
+      const j = Math.trunc(rng.nextDouble() * i);
+      a[i - 1] = a[j];
+      a[j] = i;
+    }
+    for (let i = 0; i < k; i++) {
+      out.data[0][i] = a[i];
+    }
+    return out;
+  }
+  if (k < 0.25 * n) {
+    // 2. Sparse partial Fisher-Yates.
+    const swap = new Map<number, number>();
+    const at = (j: number): number => (swap.has(j) ? swap.get(j)! : j);
+    let m = n;
+    for (let t = 0; t < k; t++) {
+      const i = Math.trunc(m * rng.nextDouble());
+      const last = at(m - 1);
+      out.data[0][t] = at(i) + 1;
+      swap.set(i, last);
+      m -= 1;
+    }
+    return out;
+  }
+  // 3. The dense algorithm.
+  const a: number[] = [];
+  for (let i = 1; i <= n; i++) {
+    a.push(i);
+  }
+  let value = 0;
+  for (let t = 0; t < k; t++) {
+    const remaining = k - t;
+    const u1 = rng.nextDouble();
+    const u2 = rng.nextDouble();
+    // The walk: `value` counts up while the accumulated probability stays
+    // below `u1`.
+    let span = n - value;
+    let p = remaining / span;
+    for (;;) {
+      value += 1;
+      if (!(p < u1)) {
+        break;
+      }
+      span -= 1;
+      p += (remaining / span) * (1 - p);
+    }
+    const slot = Math.trunc((t + 1) * u2);
+    a[t] = a[slot];
+    a[slot] = value;
+  }
+  for (let i = 0; i < k; i++) {
+    out.data[0][i] = a[i];
+  }
+  return out;
+}
+
+/**
+ * Element-wise left division `A .\ B`.
+ *
+ * MATLAB's rule for a zero divisor is `0 .\ 0 = NaN` and `0 .\ y = ±Inf`,
+ * not an error, so the helper reproduces that instead of throwing.
+ */
+function dotLeftDivide(a: Matrix, b: Matrix): Matrix {
+  return a.elementWise(b, (x, y) => {
+    if (x === 0) {
+      if (y === 0) return NaN;
+      return y > 0 ? Infinity : -Infinity;
+    }
+    return y / x;
+  });
+}
+
+/**
+ * The full one-dimensional convolution of two vectors.
+ *
+ * `c(n+1) = sum_k a(k+1) * b(n-k+1)`, so the result has
+ * `length(a) + length(b) - 1` entries.
+ */
+function convolve1d(a: number[], b: number[]): Matrix {
+  const out = new Array(a.length + b.length - 1).fill(0);
+  for (let i = 0; i < a.length; i++) {
+    for (let j = 0; j < b.length; j++) {
+      out[i + j] += a[i] * b[j];
+    }
+  }
+  return Matrix.fromArray([out]);
+}
+
+/**
+ * Interpolate one point of a regular two-dimensional grid.
+ *
+ * `X` are the grid points along the columns, `Y` the grid points along the
+ * rows and `V` the values. The `nearest` method compares the query against
+ * the midpoints between grid points and resolves a tie to the higher index,
+ * the same rule `interp1` uses.
+ */
+function interpolate2d(
+  X: number[],
+  Y: number[],
+  V: Matrix,
+  xq: number,
+  yq: number,
+  method: string
+): number {
+  const bracket = (
+    grid: number[],
+    q: number
+  ): { lo: number; hi: number; t: number } => {
+    const n = grid.length;
+    if (n === 1) return { lo: 0, hi: 0, t: 0 };
+    let lo = 0;
+    let hi = n - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (grid[mid] <= q) lo = mid;
+      else hi = mid;
+    }
+    const d = grid[hi] - grid[lo];
+    return { lo, hi, t: d === 0 ? 0 : (q - grid[lo]) / d };
+  };
+
+  const bx = bracket(X, xq);
+  const by = bracket(Y, yq);
+
+  if (method === 'nearest') {
+    // A tie resolves to the higher index.
+    const cx = xq - X[bx.lo] < X[bx.hi] - xq ? bx.lo : bx.hi;
+    const cy = yq - Y[by.lo] < Y[by.hi] - yq ? by.lo : by.hi;
+    return V.get(cy + 1, cx + 1);
+  }
+
+  const v00 = V.get(by.lo + 1, bx.lo + 1);
+  const v01 = V.get(by.lo + 1, bx.hi + 1);
+  const v10 = V.get(by.hi + 1, bx.lo + 1);
+  const v11 = V.get(by.hi + 1, bx.hi + 1);
+  const tx = bx.t;
+  const ty = by.t;
+  return (
+    (1 - tx) * (1 - ty) * v00 +
+    tx * (1 - ty) * v01 +
+    (1 - tx) * ty * v10 +
+    tx * ty * v11
+  );
+}
+
+/**
+ * The full two-dimensional convolution of two matrices.
+ */
+function convolve2d(a: Matrix, b: Matrix): Matrix {  const rows = a.rows + b.rows - 1;
+  const cols = a.cols + b.cols - 1;
+  const out = Matrix.zeros(rows, cols);
+  for (let ar = 0; ar < a.rows; ar++) {
+    for (let ac = 0; ac < a.cols; ac++) {
+      const av = a.data[ar][ac];
+      for (let br = 0; br < b.rows; br++) {
+        for (let bc = 0; bc < b.cols; bc++) {
+          out.data[ar + br][ac + bc] += av * b.data[br][bc];
+        }
+      }
+    }
+  }
+  return out;
 }
 
 /**

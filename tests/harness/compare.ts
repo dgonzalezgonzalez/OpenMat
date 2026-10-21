@@ -149,6 +149,23 @@ function compareWorkspace(
         matlab: mv,
         openmat: ov
       });
+    } else if (mdata || odata) {
+      // One side is a numeric matrix and the other is not. This used to fall
+      // through every branch and be reported as *no difference*, which hid
+      // real deviations (a builtin returning a bare JavaScript number where
+      // MATLAB returns a 1x1 double). Report it instead of ignoring it.
+      diffs.push({
+        script,
+        block,
+        kind: 'value-mismatch',
+        detail: `variable '${key}' is a numeric matrix in ${
+          mdata ? 'MATLAB' : 'OpenMat'
+        } but ${JSON.stringify(mdata ? ov : mv)} in ${
+          mdata ? 'OpenMat' : 'MATLAB'
+        }`,
+        matlab: mv,
+        openmat: ov
+      });
     } else if (mv?.kind === 'other' && ov?.kind === 'other') {
       if (String(mv.value) !== String(ov.value)) {
         diffs.push({
@@ -189,6 +206,38 @@ function compareWorkspace(
                   block,
                   kind: 'value-mismatch',
                   detail: `variable '${key}' cell element ${i + 1} differs: MATLAB=${JSON.stringify(me)} OpenMat=${JSON.stringify(oe)}`,
+                  matlab: mv,
+                  openmat: ov
+                });
+                break;
+              }
+            }
+          }
+        }
+      } else if (String(mv.value) === 'logical') {
+        // A logical array: the class name agrees, so the *values* have to
+        // agree too. The data is row-major on both sides (MATLAB's runner
+        // writes `reshape(val.', 1, [])`).
+        const mData = (mv as any).data;
+        const oData = (ov as any).data;
+        if (Array.isArray(mData) && Array.isArray(oData)) {
+          if (mData.length !== oData.length) {
+            diffs.push({
+              script,
+              block,
+              kind: 'value-mismatch',
+              detail: `variable '${key}' logical length differs: MATLAB=${mData.length} OpenMat=${oData.length}`,
+              matlab: mv,
+              openmat: ov
+            });
+          } else {
+            for (let i = 0; i < mData.length; i++) {
+              if (!numClose(Number(mData[i]), Number(oData[i]))) {
+                diffs.push({
+                  script,
+                  block,
+                  kind: 'value-mismatch',
+                  detail: `variable '${key}' logical element ${i + 1} differs: MATLAB=${mData[i]} OpenMat=${oData[i]}`,
                   matlab: mv,
                   openmat: ov
                 });
